@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
 import Dashboard from '../../pages/Dashboard';
@@ -19,6 +19,7 @@ vi.mock('../../services/api', async () => {
     },
     purchaseRequestApi: {
       getDashboard: vi.fn(),
+      downloadSpendingCsv: vi.fn(),
     },
   };
 });
@@ -83,6 +84,9 @@ describe('Dashboard page', () => {
         totalValue: 1250.5,
       }],
     }));
+    mockedPurchaseRequestApi.downloadSpendingCsv.mockResolvedValue(
+      new Blob(['Period,BranchId,BranchName,TotalValue,Currency'], { type: 'text/csv' }),
+    );
   });
 
   it('loads and renders ProcureFlow dashboard metrics', async () => {
@@ -110,5 +114,30 @@ describe('Dashboard page', () => {
     );
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Dashboard unavailable');
+  });
+
+  it('exports the current dashboard spending scope as CSV', async () => {
+    const createObjectUrl = vi.fn(() => 'blob:spending');
+    const revokeObjectUrl = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectUrl });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectUrl });
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Export spending CSV' }));
+
+    await waitFor(() => {
+      expect(mockedPurchaseRequestApi.downloadSpendingCsv).toHaveBeenCalledWith('organization-1');
+      expect(createObjectUrl).toHaveBeenCalled();
+      expect(click).toHaveBeenCalled();
+      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:spending');
+    });
+
+    click.mockRestore();
   });
 });

@@ -30,6 +30,10 @@ Zakres: eksport raportu wydatków oddziału lub listy wniosków z tymi samymi
 filtrami i autoryzacją co ekran. To najtańsze rozszerzenie o czytelnej wartości
 portfolio.
 
+Stan: zaimplementowany jako eksport raportu `Spending by branch` z dashboardu.
+Endpoint używa identycznego zakresu członkostwa i bieżącego miesiąca co agregacje
+dashboardu, a frontend pobiera UTF-8 CSV z przycisku na stronie dashboardu.
+
 ### 2. Konfigurowalne progi akceptacji
 
 Branch:

@@ -151,8 +151,12 @@ describe('PurchaseRequestApi', () => {
     const api = new PurchaseRequestApi(client);
 
     await api.getDashboard('organization-1');
+    await api.downloadSpendingCsv('organization-1');
 
     expect(client.get).toHaveBeenCalledWith('/organizations/organization-1/dashboard');
+    expect(client.getBlob).toHaveBeenCalledWith(
+      '/organizations/organization-1/dashboard/spending/export',
+    );
   });
 
   it('builds attachment list, upload, download, and delete requests', async () => {
