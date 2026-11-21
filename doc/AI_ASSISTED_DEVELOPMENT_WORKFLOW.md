@@ -333,30 +333,21 @@ Jak zabezpieczyć endpoint przed dostępem do zasobu innej organizacji?
 Co musi zostać zapisane atomowo i dlaczego?
 ```
 
-## Dobór modeli AI
+## Dobór modelu AI
 
-Stan rekomendacji: 2026-09-20. Ceny i dostępność modeli mogą się zmieniać.
+Wybieraj model według ryzyka i aktualnie dostępnych możliwości, a nie według
+nazw zapisanych w repozytorium. Konkretne modele, ceny i limity zmieniają się
+zbyt szybko, aby utrzymywać je w dokumentacji projektu.
 
-- **GPT-5.6 Luna:** małe poprawki, DTO, dokumentacja, lokalne testy, prosty
-  boilerplate i szybkie wyjaśnienia.
-- **GPT-5.6 Terra lub Auto:** codzienna implementacja obejmująca kilka warstw.
-- **GPT-5.6 Sol:** decyzje architektoniczne, bezpieczeństwo, transakcje,
-  concurrency, trudny błąd wieloplikowy i końcowy audyt ryzykownej zmiany.
-- **Duży kontekst:** tylko wtedy, gdy problem naprawdę obejmuje dużą część
-  repozytorium. Jeden chat powinien zwykle dotyczyć jednego slice'a.
-
-Luna jest dobrym modelem domyślnym do szybkiej pracy, ale nie jest według
-oficjalnej klasyfikacji modelem przeznaczonym do najtrudniejszych decyzji
-architektonicznych. Sol powinien być eskalacją, a nie modelem do każdego DTO.
-
-Niewykorzystanych środków nie warto zużywać przez generowanie zbędnego kodu.
-Lepsze zastosowania pod koniec miesiąca to:
-
-- audyt architektury aktywnego modułu;
-- przegląd test matrix i brakujących failure paths;
-- próbna rozmowa techniczna;
-- analiza bezpieczeństwa i concurrency;
-- przygotowanie kolejnego etapu roadmapy.
+- Do małej poprawki, DTO, dokumentacji i lokalnego testu wystarcza szybki model
+  z normalnym kontekstem.
+- Do implementacji obejmującej kilka warstw użyj modelu o wyższej jakości
+  rozumowania.
+- Do decyzji o autoryzacji, bezpieczeństwie, transakcjach lub concurrency użyj
+  najsilniejszego dostępnego modelu albo osobnego przeglądu.
+- Zwiększaj kontekst tylko wtedy, gdy jedna odpowiedź naprawdę musi objąć
+  wiele zależnych plików.
+- Jedna rozmowa powinna nadal obejmować jeden spójny slice lub problem.
 
 ## Minimalny plan tygodniowy
 
@@ -439,11 +430,10 @@ Na końcu:
 
 Ten workflow nie zastępuje dokumentacji produktu:
 
-- `doc/ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md` określa, co budować;
-- `doc/ROADMAP/PROCUREFLOW/09_IMPLEMENTATION_PLAYBOOK.md` określa kolejność implementacji;
+- `doc/ROADMAP.md` określa bieżący cel wydania i późniejsze opcje;
 - `doc/ARCHITECTURE.md` opisuje granice i aktualny stan systemu;
 - `doc/MODULAR_VSA_MODULE_CHECKLIST.md` określa Definition of Done;
-- `doc/ROADMAP/08_LEARNING_WORKFLOW.md` opisuje istniejący proces nauki.
+- `doc/ADDING_FEATURES.md` opisuje aktualną kolejność pracy nad nowym slice'em.
 
 Kod i testy są źródłem prawdy o tym, co rzeczywiście działa. Roadmapa jest
-źródłem prawdy o tym, co powinno zostać zbudowane dalej.
+źródłem prawdy o priorytecie kolejnej pracy.

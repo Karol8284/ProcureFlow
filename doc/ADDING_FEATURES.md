@@ -1,361 +1,101 @@
-# Adding Features
+# Adding features
 
-Ten dokument opisuje, jak rozwijać ProcureFlow w sposób spójny z obecną
-architekturą i kanoniczną roadmapą produktu.
+Use this workflow for a new ProcureFlow capability after `v1.0.0`. The roadmap
+defines product priority; code and tests define the current implementation.
 
-## When To Read This Document
+## 1. Define the slice
 
-Czytaj ten plik, gdy chcesz ustalić:
+Before editing code, record:
 
-- od czego zacząć dodawanie nowego feature'a
-- gdzie w projekcie powinna trafić nowa logika
-- w jakiej kolejności ruszać backend, frontend, bazę i dokumentację
-- jak nie zepsuć istniejących wzorców auth, runtime config i routingu
+- actor and business problem;
+- resource and data ownership;
+- successful result;
+- invalid states and HTTP behavior;
+- transactional boundary;
+- authorization rule;
+- cheapest test that proves the main invariant;
+- explicit items outside scope.
 
-Jeśli najpierw potrzebujesz zrozumieć obecną architekturę projektu, zacznij od
-[mapy dokumentacji](README.md) i [architektury](ARCHITECTURE.md).
+## 2. Choose the owner
 
-## General Rule
+Put the rule in the existing module that owns the business state:
 
-Najpierw ustal, jakiego typu jest nowy feature.
+- organization and access: `Organizations`;
+- catalog data: `Catalog`;
+- request workflow, budget, approval, fulfillment, attachments:
+  `PurchaseRequests`;
+- notification delivery: `Notifications`;
+- authentication and accounts: auth/account capability.
 
-Dla funkcji biznesowej najpierw znajdź etap i branch w
-[roadmapie ProcureFlow](ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md). Roadmapa
-określa zakres produktu, natomiast bieżący kod i testy określają, co jest już
-zaimplementowane. `Projects` i `ProjectTasks` są wycofane; nowe wymagania kieruj
-do aktywnych modułów `Organizations`, `Catalog`, `PurchaseRequests` albo
-`Notifications`.
+Do not create a module only to gain a folder boundary.
 
-Najczęstsze przypadki:
+## 3. Model the invariant
 
-- nowy ekran lub nowy flow UI
-- nowy endpoint backendowy
-- rozszerzenie istniejącego auth flow
-- nowa flaga runtime
-- nowa tabela lub nowa relacja w bazie
-- nowa sekcja admina
+If the invariant depends only on aggregate state, enforce it in the domain
+model. Keep client-provided organization, branch, owner, role, status, price,
+and totals untrusted.
 
-Nie zaczynaj od przypadkowego dopisywania kodu w widoku lub kontrolerze.
-Najpierw ustal źródło prawdy i granicę odpowiedzialności.
+Domain tests should run without ASP.NET, EF Core, or PostgreSQL.
 
-## Adding a New Frontend Feature
+## 4. Build the backend slice
 
-Jeśli dodajesz nowy feature po stronie UI:
-
-1. Ustal, czy to nowa strona, nowa sekcja istniejącej strony czy nowy komponent shella.
-2. Dodaj lub rozszerz typy w `frontend/src/types/`, jeśli zmienia się kontrakt z API.
-3. Dodaj lub rozszerz klienta API w `frontend/src/services/api/`.
-4. Dodaj schemat walidacji w `frontend/src/utils/`, jeśli feature ma formularz.
-5. Dodaj logikę do contextu lub hooka, jeśli stan ma być współdzielony.
-6. Dodaj routing w `frontend/src/components/AppRoutes.tsx`, jeśli to nowy ekran.
-7. Dodaj testy komponentu, hooka lub routingu adekwatne do zmiany.
-
-## Adding a New Backend Feature
-
-Jeśli dodajesz nowy feature po stronie backendu:
-
-1. Zacznij od domeny, jeśli pojawia się nowe pojęcie biznesowe.
-2. Dodaj DTO, interfejsy i walidację w `backend/Application/`.
-3. Dodaj implementację persistence lub integracji w `backend/Infrastructure/`.
-4. Dodaj adapter HTTP w `backend/API/Modules/<BusinessModule>/<UseCase>/`.
-   Istniejący kontroler rozszerzaj tylko podczas utrzymania obszaru, który nie
-   został jeszcze przeniesiony do modułu.
-5. Jeśli feature należy do istniejącego modułu rozwijanego w stylu modularnego VSA,
-   zastosuj standard opisany poniżej i zarejestruj usługi przez rozszerzenie modułu.
-   Dla nieprzeniesionych obszarów przejściowych użyj obecnego composition root.
-6. Dodaj testy jednostkowe i integracyjne.
-
-Jeśli feature należy do aktualnego produktu ProcureFlow, najpierw otwórz
-[playbook implementacji](ROADMAP/PROCUREFLOW/09_IMPLEMENTATION_PLAYBOOK.md).
-Zawiera konkretną kolejność pisania plików dla PF1-PF6, przykładowe slice'y dla
-`Organizations` oraz kryteria, po których można przejść do następnego brancha.
-
-## Adding a New Runtime Feature Flag
-
-To jest ważny, powtarzalny wzorzec w tym projekcie.
-
-Jeśli chcesz dodać nową flagę runtime:
-
-1. Dodaj pole w backendowym settings, zwykle w `Shared/Settings/UiFeatureSettings.cs` albo innym odpowiednim settings class.
-2. Dodaj wartość w `backend/API/appsettings.json` i `backend/API/appsettings.Development.json`.
-3. Dodaj pole do `backend/Shared/Dtos/AppRuntimeConfigurationDto.cs`.
-4. Zmapuj je w `backend/API/Controllers/RuntimeConfigController.cs`.
-5. Dodaj odpowiadające pole do `frontend/src/types/runtimeConfig.ts`.
-6. Dodaj fallback i normalizację w `frontend/src/context/RuntimeConfigContext.tsx`.
-7. Wystaw prosty boolean przez `frontend/src/hooks/useFeatureAvailability.ts`.
-8. Użyj flagi w `Navbar`, `AppRoutes`, `AppBootstrapGate` albo odpowiednim komponencie.
-9. Dodaj testy dla runtime config contextu i miejsc, które są przez flagę sterowane.
-
-## Where to Put New Logic
-
-Kilka prostych reguł:
-
-- decyzje o widoczności trasy wkładaj do routingu
-- decyzje o widoczności linków i sekcji shella wkładaj do shella lub navbara
-- logikę pobierania i transformacji danych wkładaj do API clienta, contextu albo hooka
-- logikę walidacji formularzy trzymaj w `utils/` obok innych schematów
-- logikę bezpieczeństwa i autoryzacji trzymaj po stronie backendu
-
-## Adding a New Database Table or Relation
-
-Jeśli feature wymaga nowej tabeli:
-
-1. Dodaj encję w `backend/Domain/Entities/`.
-2. Dodaj `DbSet` i konfigurację relacji w `ApplicationDbContext`.
-3. Wygeneruj migrację EF Core.
-4. Dodaj lub rozszerz serwis infrastrukturalny, który pracuje na tych danych.
-5. Dodaj testy integracyjne sprawdzające zapis i odczyt.
-
-Warto pilnować, żeby relacje i indeksy były jawne i czytelne, szczególnie dla rekordów tokenów, challenge i danych użytkownika.
-
-## Modular Monolith Feature Boundary
-
-Dla nowych funkcji należących do modułu biznesowego stosuj granicę slice'a zamiast
-dopisywania kolejnej metody do szerokiego serwisu aplikacyjnego. Handler powinien
-korzystać z portu opisującego konkretną potrzebę, a nie z `ApplicationDbContext`.
-
-Rekomendowany podział:
-
-1. Dla nowych slice'ów umieść kontrakty w
-   `Application/Modules/<BusinessModule>/<UseCase>/`. Przykładowo
-   `CreatePurchaseRequest` należy do
-   `Application/Modules/PurchaseRequests/CreatePurchaseRequest/`.
-   Istniejące, jeszcze nieprzeniesione przypadki mogą pozostać w
-   `Application/Features/<Feature>/`.
-2. Reguły domenowe trzymaj w encji lub agregacie w `Domain/`.
-3. Zdefiniuj małe porty persistence opisujące konkretne potrzeby funkcji.
-4. Dla nowych slice'ów implementacje portów EF umieść w
-   `Infrastructure/Modules/<BusinessModule>/<UseCase>/`; istniejące adaptery mogą
-   pozostać w dotychczasowej lokalizacji przejściowej.
-5. Zarejestruj porty i implementacje przez rozszerzenie modułu; composition root
-   powinien znać tylko punkt wejścia modułu.
-6. Testuj handler przez mocki portów, a zapis i zapytania EF przez testy integracyjne.
-
-Poniższe porty `ProjectTasks` są wyłącznie historyczną referencją istniejącej
-domeny demonstracyjnej, a nie katalogiem portów do kopiowania do ProcureFlow:
-
-- `IProjectTaskAccess` - aktywna rola użytkownika i pobranie zadania z etykietami,
-- `IListProjectTasksQueryStore` - filtrowanie, sortowanie i paginacja listy zadań,
-- `IProjectTaskCommandStore` - zapis zadania, etykiet, aktywności i zmian,
-- `IProjectTaskMemberAssignmentWriter` - staging unassign przy usuwaniu członka,
-- `IProjectTaskDashboardReader` - read model statystyk dla dashboardu `Projects`.
-
-Historyczne use case'y `Projects` miały focused store lub jawny port modułowy.
-Dashboard rozdzielał `IGetProjectDashboardStore` dla danych należących do
-`Projects` od `IProjectTaskDashboardReader` dla danych należących do
-`ProjectTasks`. Kontroler i handler nie znały `ApplicationDbContext`.
-
-Nie twórz generycznego `IRepository<T>` tylko po to, aby ukryć EF Core. Port powinien
-wynikać z przypadku użycia i przyjmować typy oraz operacje potrzebne konkretnej
-funkcji. Nie dodawaj MediatR, event busa ani brokera wiadomości bez wymagania
-wynikającego z rzeczywistego przypadku biznesowego.
-
-## Vertical Slice Standard
-
-Nowe przypadki użycia w module biznesowym zaczynaj od katalogu slice'a, a nie od
-dopisania kolejnej metody do dużego serwisu:
+Use focused folders:
 
 ```text
-Application/Modules/<BusinessModule>/<UseCase>/
-API/Modules/<BusinessModule>/<UseCase>/
-Infrastructure/Modules/<BusinessModule>/<UseCase>/
-UnitTests/Modules/<BusinessModule>/<UseCase>/
+backend/Application/Modules/<Module>/<UseCase>/
+backend/API/Modules/<Module>/<UseCase>/
+backend/Infrastructure/Modules/<Module>/<UseCase>/
+backend/UnitTests/Modules/<Module>/<UseCase>/
 ```
 
-Każdy slice powinien mieć, zależnie od potrzeb:
+The handler coordinates the use case. Narrow ports describe the required
+queries and writes. The EF adapter implements those ports, and the controller
+translates HTTP. Module registration stays in one module extension.
 
-1. command lub query oraz mały port handlera w `Application`;
-2. handler koordynujący reguły przypadku użycia;
-3. request/response i validator przy adapterze HTTP;
-4. endpoint zachowujący istniejący kontrakt i statusy HTTP;
-5. implementację portów persistence w `Infrastructure`;
-6. testy handlera oraz test integracyjny dla trasy;
-7. rejestrację w module, a nie bezpośredni wpis w composition root;
-8. krótką dokumentację decyzji, zależności i zachowania przy błędzie.
+Do not add a generic repository, MediatR, event bus, or broker without a
+recorded requirement.
 
-Każda nowa komenda lub kwerenda ProcureFlow powinna mieć własny slice oraz
-rejestrację w entry poincie właściwego modułu, na przykład
-`OrganizationsModule`, `CatalogModule` albo `PurchaseRequestsModule`. Zmiany w
-`ProjectsModule` i `ProjectTasksModule` są wycofane i nie należy ich ponownie
-rejestrować ani rozwijać. Porty współdzielone przez kilka slice'ów są dopuszczalne tylko wtedy, gdy opisują
-rzeczywistą wspólną potrzebę, a nie wygodę dostępu do całego `DbContext`.
+## 5. Protect persistence
 
-Nie traktuj folderu jako granicy sam w sobie. Moduł jest granicą dopiero wtedy, gdy:
+For schema changes:
 
-- API zależy od kontraktu handlera, a nie od `DbContext`;
-- infrastruktura implementuje porty z `Application`;
-- rejestracja zależności jest skupiona w module;
-- testy potwierdzają zachowanie slice'a;
-- zależności do innych modułów są jawne i ograniczone.
+1. add explicit EF mapping, constraints, and indexes;
+2. generate a migration;
+3. verify an empty database and the latest supported upgrade path;
+4. add PostgreSQL tests for constraints, transactions, or races;
+5. keep application rollback and database compatibility in mind.
 
-## Naming Conventions
+Stage all writes that must succeed together before one final
+`SaveChangesAsync`.
 
-Praktyczne zasady:
+## 6. Add the frontend
 
-- ekran: nazwa rzeczownikowa lub flow-oriented, np. `ResetPassword`, `UserList`
-- hook: `use` + odpowiedzialność, np. `useFeatureAvailability`
-- context: obszar stanu + `Context`, np. `RuntimeConfigContext`
-- API client: obszar + `Api`, np. `RuntimeConfigApi`
-- backend settings: obszar + `Settings`, np. `EmailTwoFactorSettings`
-- request/response DTO: cel + `RequestDto` lub `ResponseDto`, gdy to pomaga odróżnić kierunek
+After the API contract is stable:
 
-## Common Mistakes to Avoid
+1. add domain types in `frontend/src/types/`;
+2. add a focused API client in `frontend/src/services/api/`;
+3. add validation and form state;
+4. add routing and the page;
+5. cover loading, empty, error, success, and stale conflict behavior;
+6. add UI and browser tests appropriate to the risk.
 
-- nie dodawaj feature flags tylko po stronie frontendu, jeśli źródłem prawdy ma być backend
-- nie duplikuj tego samego kontraktu w kilku plikach pod inną nazwą
-- nie rozsiewaj logiki auth po wielu komponentach
-- nie wrzucaj logiki infrastrukturalnej do kontrolerów
-- nie traktuj ukrycia przycisku w UI jako zabezpieczenia
-- nie aktualizuj tylko jednego `appsettings`, jeśli feature ma działać spójnie w różnych środowiskach
+## 7. Update documentation
 
-## Recommended Change Order
+Update current architecture and setup docs only when actual behavior changes.
+Create an ADR only for a durable boundary or policy decision. Do not keep
+completed file plans, per-branch checklists, or draft open questions in the
+repository after implementation.
 
-Najbezpieczniejsza kolejność przy większych zmianach:
+## Validation order
 
-1. user story, reguła biznesowa i kryterium akceptacji
-2. kontrakt i model danych
-3. backendowa implementacja oraz testy domeny
-4. persistence, migracja i testy PostgreSQL
-5. frontendowy klient API, typy, stan i UI
-6. testy frontendu oraz test API/E2E adekwatny do ryzyka
-7. dokumentacja, pełny build i przygotowanie commita
+Start narrow and expand:
 
-Pełny przebieg z konkretnymi nazwami katalogów i plików znajduje się w
-[playbooku implementacji ProcureFlow](ROADMAP/PROCUREFLOW/09_IMPLEMENTATION_PLAYBOOK.md).
+1. Domain/unit test for the changed rule.
+2. Focused API or handler test.
+3. PostgreSQL test when constraints or concurrency are involved.
+4. Frontend test and build when the contract or UI changes.
+5. Backend build and broader tests.
+6. Docker/browser gate before a release candidate.
 
-## Documentation Rule
-
-Jeśli feature wprowadza nowy przepływ, nowy typ danych albo nowy wzorzec architektoniczny, zaktualizuj dokumentację w `doc/` od razu po wdrożeniu zmiany.
-
-## Legacy Project And ProjectTask Reference
-
-> [!NOTE]
-> Ta sekcja zachowuje historyczny opis usuniętej domeny demonstracyjnej. Nie definiuje
-> modelu `PurchaseRequest`, nie opisuje aktywnych endpointów i nie jest backlogiem
-> nowych funkcji. Używaj jej wyłącznie jako referencji do wcześniejszych wzorców.
-
-Feature zarządzania projektami składa się z dwóch powiązanych, ale osobnych agregatów:
-
-- `Project` jest aggregate rootem dla członkostwa i należy do jednego użytkownika (`OwnerId`),
-- `ProjectTask` jest osobnym aggregate rootem i przechowuje referencję do dokładnie jednego projektu (`ProjectId`),
-- jeden projekt może mieć wiele zadań,
-- zadanie może być opcjonalnie przypisane do aktywnego użytkownika (`AssignedUserId`).
-- zadanie może mieć do 10 etykiet (`ProjectTaskLabel`), unikalnych w ramach zadania.
-
-Relacja ma następującą postać:
-
-```text
-User 1 ---- * Project 1 ---- * ProjectMember
-				 |
-				 | ProjectId reference / FK
-				 |
-				 * ProjectTask ---- 0..1 User (AssignedUser)
-```
-
-Diagram pokazuje relację danych, a nie własność agregatową. `ProjectTask` nie jest
-ładowany ani zmieniany przez `Project`; reguły wymagające danych z obu agregatów są
-koordynowane przez application service.
-
-### Backend Contract
-
-Projekty:
-
-```text
-GET    /api/projects
-POST   /api/projects
-GET    /api/projects/{projectId}
-PUT    /api/projects/{projectId}
-DELETE /api/projects/{projectId}
-```
-
-`DELETE /api/projects/{projectId}` jest soft delete i ustawia `IsArchived = true`.
-Archiwalne projekty są pomijane domyślnie. Właściciel może pobrać je jawnie przez
-`includeArchived=true`. Zarchiwizowany projekt nie przyjmuje nowych zmian ani zadań.
-
-Zadania:
-
-```text
-GET    /api/projects/{projectId}/tasks
-POST   /api/projects/{projectId}/tasks
-GET    /api/projects/{projectId}/tasks/{taskId}
-PUT    /api/projects/{projectId}/tasks/{taskId}
-PATCH  /api/projects/{projectId}/tasks/{taskId}/status
-DELETE /api/projects/{projectId}/tasks/{taskId}
-```
-
-Etykiety są przekazywane w polu `labels` żądań tworzenia i edycji zadania. Każda
-etykieta ma maksymalnie 40 znaków; API usuwa białe znaki brzegowe, normalizuje
-nazwy do małych liter, usuwa duplikaty i zwraca je w kolejności alfabetycznej.
-
-Przypomnienia o terminach są tworzone przez worker uruchamiany co godzinę.
-Przypisany aktywny użytkownik dostaje jedno powiadomienie, gdy aktywne zadanie
-ma termin w ciągu 24 godzin, oraz osobne powiadomienie po terminie. Rekord
-`ProjectTaskDeadlineReminder` deduplikuje powiadomienia według zadania,
-odbiorcy, rodzaju i terminu.
-
-Powiadomienia dotyczące zadań przekazują również `ProjectId` obok
-`ResourceType = "ProjectTask"` i `ResourceId` zadania. Frontend używa tych
-danych do przejścia do `/projects` oraz przewinięcia do wskazanego zadania,
-także gdy zadanie nie znajduje się na aktualnej stronie listy.
-
-Każdy endpoint zadań najpierw sprawdza, czy zalogowany użytkownik jest właścicielem
-lub aktywnym członkiem projektu oraz czy projekt nie jest zarchiwizowany. Samo
-posiadanie identyfikatora projektu lub zadania nie daje dostępu.
-
-### Database Relation
-
-Relację należy konfigurować jawnie w `ApplicationDbContext`:
-
-- `ProjectTask.ProjectId` jest wymaganym kluczem obcym do `Project.Id` i używa cascade delete; FK zapewnia integralność referencyjną, ale nie zmienia granicy agregatu,
-- `ProjectTask.AssignedUserId` jest opcjonalnym kluczem obcym do `User.Id` i używa `SetNull`,
-- `Status` i `Priority` są enumami zapisywanymi jako tekst,
-- `ProjectTaskLabel` używa cascade delete z zadaniem i unikalnego indeksu na `(ProjectTaskId, Name)`,
-- `ProjectTaskDeadlineReminder` używa cascade delete z zadaniem i unikalnego indeksu na `(ProjectTaskId, RecipientUserId, Type, DueDate)`,
-- po zmianie modelu należy wygenerować migrację z katalogu `backend/`.
-
-Przykład komendy:
-
-```powershell
-dotnet ef migrations add AddProjectTasks `
-	--project Infrastructure `
-	--startup-project API `
-	--context ApplicationDbContext `
-	--output-dir Data\Migrations
-```
-
-### Historical Implementation Order
-
-1. Domena: `Project`, `ProjectTask` i enumy.
-2. `DbSet`, indeksy, klucze obce i migracja.
-3. DTO, walidatory i kontrakty serwisów.
-4. Serwis z kontrolą właściciela projektu.
-5. Nested controller pod `/api/projects/{projectId}/tasks`.
-6. Testy cyklu życia zadania, własności, archiwizacji i walidacji.
-7. Dopiero po stabilizacji API integracja z frontendem.
-
-Po pierwszym wdrożeniu funkcji wykonaj również:
-
-8. Testy jednostkowe serwisów aplikacyjnych przez porty.
-9. Testy integracyjne z rzeczywistym providerem, jeśli zmiana dotyka persistence.
-10. Aktualizację dokumentacji granicy modułu i przepływu zależności.
-
-## Which Document To Open Next
-
-W zależności od typu zmiany przejdź dalej do odpowiedniego pliku:
-
-- `doc/ARCHITECTURE.md` - jeśli chcesz najpierw zrozumieć szeroki obraz projektu
-- `doc/BACKEND_SETUP.md` - jeśli dodajesz endpoint, persistence albo konfigurację backendu
-- `doc/FRONTEND_SETUP.md` - jeśli dodajesz ekran, routing, context albo integrację UI
-- `doc/JWT_ARCHITECTURE.md` - jeśli zmiana dotyka sesji, JWT, refresh tokenów albo `/me`
-- `doc/EMAIL_2FA_FLOWS.md` - jeśli zmiana dotyka confirm email, 2FA albo resetu hasła
-- `doc/ROADMAP/PROCUREFLOW/` - jeśli zmiana dodaje funkcję biznesową ProcureFlow
-
-## See Also
-
-- `doc/README.md` - źródła prawdy i klasyfikacja dokumentacji
-- `doc/ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md` - aktywna kolejność produktu
-- `doc/ARCHITECTURE.md` - mapa odpowiedzialności i głównych przepływów informacji
-- `doc/BACKEND_SETUP.md` - warstwy backendu, konfiguracja i wzorce rozszerzania API
-- `doc/FRONTEND_SETUP.md` - bootstrap UI, routing i warstwa klienta API
-- `doc/JWT_ARCHITECTURE.md` - model sesji i bezpieczeństwo tokenów
-- `doc/EMAIL_2FA_FLOWS.md` - szczegółowe flow email confirmation, 2FA i password reset
+Use the [module checklist](MODULAR_VSA_MODULE_CHECKLIST.md) before marking a
+slice complete.

@@ -1,96 +1,44 @@
 # ProcureFlow
 
-ProcureFlow to portfolio-grade system zarządzania zapotrzebowaniami zakupowymi dla
-organizacji posiadającej wiele oddziałów. Aplikacja wykorzystuje ASP.NET Core 10 LTS,
-React 19, TypeScript, EF Core i PostgreSQL na bazie wcześniej zweryfikowanego
-fundamentu technicznego.
+ProcureFlow to system B2B do obsługi zapotrzebowań zakupowych w organizacji z
+wieloma oddziałami. Pracownik tworzy wniosek, manager zatwierdza go w zakresie
+budżetu oddziału, a dział Procurement obsługuje eskalację, zamówienie i
+dostarczenie.
 
-> [!IMPORTANT]
-> Fundament aplikacji oraz zakres funkcjonalny PF0-PF6 są zaimplementowane lokalnie.
-> PF6 usunął aktywną domenę demonstracyjną `Projects` i `ProjectTasks`, a lokalny
-> release candidate wymaga jeszcze zielonego CI, stagingu i formalnej decyzji przed
-> tagiem `v1.0.0`. Kanoniczną kolejność implementacji definiuje
-> [roadmapa ProcureFlow](doc/ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md).
+## Status wydania
 
-## Zakres ProcureFlow v1.0
+Zakres `v1.0.0` jest zaimplementowany jako lokalny release candidate. Formalne
+wydanie wymaga świeżego dowodu z CI, stagingu, backupu, odtworzenia i rollbacku.
+Liczby testów zapisane w poprzednich audytach nie są dowodem aktualności
+bieżącego commita.
 
-- jedna organizacja posiadająca wiele oddziałów i role biznesowe zależne od członkostwa;
-- katalog kategorii, jednostek miary i produktów;
-- draft zapotrzebowania, pozycje, wysłanie i anulowanie;
-- miesięczny budżet oddziału, akceptacja managera i eskalacja do Procurement;
-- realizacja zaakceptowanego wniosku jako zamówionego i dostarczonego;
-- historia decyzji, powiadomienia, załączniki i prosty dashboard;
-- testy transakcji, autoryzacji i współbieżności na PostgreSQL;
-- krytyczny przepływ od utworzenia wniosku do dostarczenia przetestowany w przeglądarce.
+Stan produktu i dalsze kroki: [roadmap](doc/ROADMAP.md) oraz
+[lista kontrolna release](doc/RELEASE_CHECKLIST.md).
 
-## Gotowy fundament techniczny
+## Zakres produktu
 
-- podział backendu na warstwy `API`, `Application`, `Domain`, `Infrastructure` i `Shared`;
-- JWT access token oraz rotacja refresh tokenów w ciasteczkach HttpOnly;
-- potwierdzanie adresu e-mail i e-mailowe 2FA;
-- autoryzacja oparta na rolach oraz ochrona dostępu do zasobów;
-- walidacja formularzy przez React Hook Form i Zod;
-- centralna obsługa wyjątków, Serilog i health check API;
-- endpointy liveness, readiness i kondycji workerów oraz korelacja żądań przez `X-Correlation-ID`;
-- neutralne granice załączników, skanowania malware i wyszukiwania używane przez
-  aktywne moduły ProcureFlow;
-- PostgreSQL, Mailpit i reverse proxy w lokalnym środowisku Docker Compose;
-- testy jednostkowe, integracyjne, frontendowe oraz Docker smoke/E2E;
-- GitHub Actions dla walidacji kodu i publikowania obrazów do GHCR.
+- Jedna organizacja, wiele oddziałów i członkostwa przypisane do oddziału.
+- Katalog kategorii, jednostek miary i produktów.
+- Draft zapotrzebowania, pozycje, wysłanie i anulowanie.
+- Miesięczne budżety oddziałów, akceptacja managera i eskalacja do Procurement.
+- Stany zamówienia i dostarczenia.
+- Historia decyzji, powiadomienia, załączniki i dashboard.
+- Testy transakcji, autoryzacji i współbieżności na PostgreSQL.
+- Testy przeglądarkowe krytycznego przepływu zakupowego.
 
-## Stack technologiczny
+## Stack
 
-### Backend
-
-- .NET 10 LTS i ASP.NET Core Web API;
-- Entity Framework Core i PostgreSQL;
-- FluentValidation;
-- Serilog;
-- xUnit i Moq.
-
-### Frontend
-
-- React 19;
-- TypeScript;
-- React Router 7;
-- React Hook Form;
-- Zod;
-- Testing Library, Vitest i Vite.
-
-Aktywny manifest aplikacji frontendowej znajduje się w [frontend/package.json](frontend/package.json). Rootowe manifesty Node nie są wymagane do budowania aplikacji.
-
-## Struktura projektu
-
-```text
-.
-├── backend/
-│   ├── API/                  # kontrolery, middleware i konfiguracja startowa
-│   ├── Application/          # DTO, serwisy, walidatory i interfejsy
-│   ├── Domain/               # encje, enumy, value objects i kontrakty domenowe
-│   ├── Infrastructure/       # DbContext, migracje, repozytoria i usługi
-│   ├── Shared/               # wspólne odpowiedzi, ustawienia i helpery
-│   ├── UnitTests/            # testy jednostkowe
-│   ├── IntegrationTests/     # testy integracyjne API
-│   └── E2ETests/             # smoke testy uruchomionego środowiska
-├── frontend/                 # aplikacja React i aktywny package.json
-├── docker/                   # konfiguracja nginx i dokumentacja Compose
-├── doc/                      # dokumentacja architektury i uruchamiania
-├── docker-compose.yml        # główny lokalny stack kontenerów
-└── .github/workflows/        # workflowy CI i publikacji obrazów
-```
+- Backend: .NET 10 LTS, ASP.NET Core, EF Core, PostgreSQL, FluentValidation,
+  Serilog, xUnit i Moq.
+- Frontend: React 19, TypeScript, React Router, React Hook Form, Zod, Vite,
+  Vitest, Testing Library i Playwright.
 
 ## Szybki start
 
-### Wymagania
-
-- .NET 10 SDK;
-- Node.js 22.x;
-- Docker Desktop z obsługą Compose.
-
-### Docker Compose
+Wymagania: .NET 10 SDK, Node.js 22 oraz Docker z Compose.
 
 ```powershell
-git clone https://github.com/Karol-Malecki-dev/ProcureFlow.git
+git clone https://github.com/Karol8284/ProcureFlow.git
 Set-Location ProcureFlow
 Copy-Item .env.example .env
 docker compose up --build
@@ -98,140 +46,45 @@ docker compose up --build
 
 Lokalne adresy:
 
-- frontend: <http://localhost:3000>;
-- API: <http://localhost:5000>;
-- health check: <http://localhost:5000/health>;
-- readiness: <http://localhost:5000/health/ready>;
-- worker health: <http://localhost:5000/health/workers>;
-- Swagger: <http://localhost:5000/swagger>;
-- Mailpit: <http://localhost:8025>.
+- frontend: `http://localhost:3000`;
+- API: `http://localhost:5000`;
+- health: `http://localhost:5000/health`;
+- Swagger: `http://localhost:5000/swagger`;
+- Mailpit: `http://localhost:8025`.
 
-Compose uruchamia PostgreSQL, Mailpit, backend i frontend. Wartości domyślne są przeznaczone do lokalnego developmentu. Sekrety środowiska docelowego należy dostarczać przez konfigurację hostingu lub bezpieczny magazyn sekretów.
+Domyślny Compose służy do developmentu i smoke testów. Nie jest konfiguracją
+produkcyjną.
 
-### Uruchomienie lokalne bez Dockera
+Pełna instrukcja konfiguracji i uruchamiania:
+[Getting Started](doc/GETTING_STARTED.md).
 
-Backend:
-
-```powershell
-Set-Location backend/API
-dotnet run
-```
-
-Frontend:
+## Walidacja
 
 ```powershell
-Set-Location frontend
-npm install
-npm start
-```
-
-Przy lokalnym uruchomieniu frontendu ustaw `VITE_API_URL=http://localhost:5000` w `frontend/.env.development.local`.
-
-Każda odpowiedź API zawiera nagłówek `X-Correlation-ID`. Możesz przekazać własną wartość w żądaniu, aby znaleźć powiązane wpisy w logach; bez niego API wygeneruje identyfikator żądania.
-
-## Operacje i health checks
-
-- `GET /health` sprawdza API i bazę danych, ale nie blokuje się na workerach podczas ich pierwszego cyklu.
-- `GET /health/live` sprawdza wyłącznie, czy proces API działa.
-- `GET /health/ready` sprawdza, czy baza danych przyjmuje połączenia.
-- `GET /health/workers` sprawdza świeżość i wynik ostatniego cyklu workerów outbox oraz przypomnień.
-
-`/health/live` nadaje się do probe liveness, `/health/ready` do probe readiness, a `/health/workers` do osobnego monitoringu zadań w tle.
-
-## Uwierzytelnianie
-
-Projekt zawiera następujący przepływ:
-
-1. `POST /api/auth/register` tworzy konto i wysyła wiadomość potwierdzającą adres.
-2. `POST /api/auth/confirm-email` aktywuje konto.
-3. `POST /api/auth/login` wydaje tokeny albo rozpoczyna wyzwanie e-mailowego 2FA.
-4. `POST /api/auth/verify-2fa` kończy logowanie po poprawnej weryfikacji kodu.
-5. `POST /api/auth/refresh-token` rotuje refresh token i wydaje nowy access token.
-6. `POST /api/auth/logout` unieważnia refresh token i usuwa ciasteczko.
-7. `GET /api/auth/me` zwraca profil zalogowanego użytkownika.
-
-Frontend przechowuje lokalnie wyłącznie access token. Refresh token pozostaje w ciasteczku HttpOnly i nie jest dostępny dla JavaScriptu. W lokalnym Compose wiadomości trafiają do Mailpit.
-
-## Testy
-
-Backend:
-
-```powershell
-dotnet test backend/UnitTests/UnitTests.csproj
-dotnet test backend/IntegrationTests/IntegrationTests.csproj
-```
-
-Testy integracyjne obejmują także Testcontainers PostgreSQL i uruchamiają prawdziwe migracje EF Core. Przed tym testem musi działać Docker Desktop:
-
-```powershell
-docker info
-dotnet test backend/IntegrationTests/IntegrationTests.csproj --filter "FullyQualifiedName~PostgreSqlIntegrationTests"
-```
-
-Smoke testy E2E wymagają uruchomionego środowiska:
-
-```powershell
-./scripts/Invoke-E2ETests.ps1
-```
-
-Frontend:
-
-```powershell
+dotnet build backend/backend.slnx --configuration Release
+dotnet test backend/UnitTests/UnitTests.csproj --configuration Release
+dotnet test backend/IntegrationTests/IntegrationTests.csproj --configuration Release
 Set-Location frontend
 npm ci
 npm run test:once
 npm run build
+Set-Location ..
+.\scripts\Invoke-E2ETests.ps1
 ```
 
-E2E w tym repozytorium są testami smoke uruchomionego stacku. Sprawdzają podstawową dostępność API i frontendu, a nie pełne pokrycie wszystkich przepływów biznesowych.
-
-## CI/CD
-
-GitHub Actions obejmuje build, testy jednostkowe i integracyjne backendu, testy i build frontendu, Docker Compose smoke tests oraz publikowanie obrazów backendu i frontendu do GitHub Container Registry.
-
-Workflow CD publikuje niezmienne obrazy z pełnym tagiem SHA i może wdrożyć je do chronionego
-środowiska staging na VPS, gdzie uruchamia publiczne browser smoke przez HTTPS z profilowym
-Mailpit. Promocja na produkcję pozostaje ręczna i wymaga spełnienia bramy V5, w tym dowodu backupu,
-restore i rollbacku. Szczegóły znajdują się w [doc/CI_CD.md](doc/CI_CD.md).
-
-## Znane ograniczenia
-
-- lokalny release gate przeszedł, ale formalne `v1.0.0` nadal wymaga zielonego
-  GitHub CI, stagingu oraz dowodu backupu, restore i rollbacku;
-- ostatni `npm ci` i pełny audyt npm zakończyły się bez podatnych pakietów;
-- Docker Compose jest przede wszystkim lokalnym środowiskiem uruchomieniowym i testowym;
-- domyślne hasła oraz sekrety Compose nie nadają się do środowiska produkcyjnego;
-- publikacja obrazu do GHCR nie jest równoznaczna z deploymentem;
-- pełne testy przepływów biznesowych wymagają dalszego rozszerzania testów integracyjnych i E2E.
+Testy PostgreSQL wymagają działającego Dockera. Smoke testy i Playwright wymagają
+uruchomionej aplikacji albo pełnego skryptu walidacyjnego.
 
 ## Dokumentacja
 
 - [Mapa dokumentacji](doc/README.md)
-- [Playbook implementacji ProcureFlow](doc/ROADMAP/PROCUREFLOW/09_IMPLEMENTATION_PLAYBOOK.md)
-- [Roadmapa produktu ProcureFlow](doc/ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md)
-- [doc/GETTING_STARTED.md](doc/GETTING_STARTED.md)
-- [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md)
-- [doc/BACKEND_SETUP.md](doc/BACKEND_SETUP.md)
-- [doc/FRONTEND_SETUP.md](doc/FRONTEND_SETUP.md)
-- [doc/JWT_ARCHITECTURE.md](doc/JWT_ARCHITECTURE.md)
-- [doc/EMAIL_2FA_FLOWS.md](doc/EMAIL_2FA_FLOWS.md)
-- [doc/CI_CD.md](doc/CI_CD.md)
-- [docker/DOCKER_COMPOSE.md](docker/DOCKER_COMPOSE.md)
-
-Dokumenty `V1-V8` opisują dojrzałość odziedziczonego fundamentu technicznego.
-Nie definiują już kolejności branchy produktu.
-
-## Aktualny etap produktu
-
-PF0-PF6 są ukończone w lokalnym release candidate. Po migracji na .NET 10 lokalny
-release gate przeszedł: build backendu bez ostrzeżeń, 249 testów jednostkowych,
-115 testów integracyjnych PostgreSQL, 3 Docker smoke tests, 87 testów frontendu,
-build produkcyjny oraz 2/2 testy Playwright E2E. Audyty NuGet i npm nie wykazały
-podatnych pakietów. Formalne wydanie `v1.0.0` nadal wymaga zielonego GitHub CI,
-stagingu i operacyjnej walidacji wdrożenia, w tym backupu, restore i rollbacku.
-PF7 pozostaje poza zakresem V1. Konkretne pliki i kolejność testów opisuje
-[playbook implementacji ProcureFlow](doc/ROADMAP/PROCUREFLOW/09_IMPLEMENTATION_PLAYBOOK.md).
+- [Roadmap produktu](doc/ROADMAP.md)
+- [Architektura](doc/ARCHITECTURE.md)
+- [Backend setup](doc/BACKEND_SETUP.md)
+- [Frontend setup](doc/FRONTEND_SETUP.md)
+- [CI/CD](doc/CI_CD.md)
+- [Runbook wdrożeniowy](doc/DEPLOYMENT_RUNBOOK.md)
 
 ## Licencja
 
-MIT. Szczegóły znajdują się w [LICENSE](LICENSE).
+MIT. Szczegóły: [LICENSE](LICENSE).
