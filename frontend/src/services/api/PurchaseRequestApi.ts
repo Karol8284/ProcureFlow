@@ -48,6 +48,12 @@ export class PurchaseRequestApi {
     );
   }
 
+  downloadSpendingCsv(organizationId: string): Promise<Blob> {
+    return this.client.getBlob(
+      `/organizations/${organizationId}/dashboard/spending/export`,
+    );
+  }
+
   getBudget(
     organizationId: string,
     branchId: string,

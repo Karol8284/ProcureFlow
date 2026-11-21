@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
+using System.Text;
 using API.Responses;
 using Application.Modules.PurchaseRequests;
 using Domain.Models.Organizations.Enums;
@@ -60,6 +62,49 @@ public sealed class PurchaseRequestDashboardController : ControllerBase
             Map(result.Value!)));
     }
 
+    /// <summary>
+    /// Downloads branch spending from the current month using the dashboard's authorized scope.
+    /// </summary>
+    [HttpGet("spending/export")]
+    [Produces("text/csv")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ExportSpending(
+        Guid organizationId,
+        CancellationToken cancellationToken = default)
+    {
+        var userIdValue = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        if (!Guid.TryParse(userIdValue, out var userId))
+        {
+            return Unauthorized(ApiResponse<object>.Error(
+                StatusCodes.Status401Unauthorized,
+                "Authenticated user identifier is invalid."));
+        }
+
+        var result = await _handler.HandleAsync(
+            new GetPurchaseRequestDashboardQuery(userId, organizationId),
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            var statusCode = OperationResultStatusCodeMapper.Map(result.Status);
+            return StatusCode(
+                statusCode,
+                ApiResponse<object>.Error(statusCode, result.Message));
+        }
+
+        var now = DateTime.UtcNow;
+        var content = BuildSpendingCsv(result.Value!.SpendingByBranch, now);
+        var fileName = $"procureflow-spending-{now:yyyy-MM}.csv";
+        return File(content, "text/csv; charset=utf-8", fileName);
+    }
+
     private static PurchaseRequestDashboardResponse Map(PurchaseRequestDashboardView dashboard)
         => new(
             dashboard.ScopeRole,
@@ -79,6 +124,45 @@ public sealed class PurchaseRequestDashboardController : ControllerBase
                     branch.BranchName,
                     branch.TotalValue))
                 .ToList());
+
+    private static byte[] BuildSpendingCsv(
+        IReadOnlyList<PurchaseRequestDashboardBranchView> spendingByBranch,
+        DateTime exportedAtUtc)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new StreamWriter(
+            stream,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
+            leaveOpen: true);
+
+        writer.WriteLine("Period,BranchId,BranchName,TotalValue,Currency");
+        foreach (var branch in spendingByBranch.OrderBy(item => item.BranchName, StringComparer.Ordinal))
+        {
+            writer.WriteLine(string.Join(',', new[]
+            {
+                CsvCell(exportedAtUtc.ToString("yyyy-MM", CultureInfo.InvariantCulture)),
+                CsvCell(branch.BranchId.ToString()),
+                CsvCell(branch.BranchName),
+                CsvCell(branch.TotalValue.ToString("0.00", CultureInfo.InvariantCulture)),
+                CsvCell("PLN")
+            }));
+        }
+
+        writer.Flush();
+        return stream.ToArray();
+    }
+
+    private static string CsvCell(string? value)
+    {
+        var safeValue = value ?? string.Empty;
+        var firstMeaningful = safeValue.TrimStart();
+        if (firstMeaningful.Length > 0 && "=+-@".Contains(firstMeaningful[0]))
+        {
+            safeValue = $"'{safeValue}";
+        }
+
+        return $"\"{safeValue.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
 }
 
 /// <summary>JSON contract returned by the organization dashboard endpoint.</summary>

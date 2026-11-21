@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Shared.Responses;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -1171,6 +1172,19 @@ public sealed class PurchaseRequestsApiInMemoryIntegrationTests : IDisposable
         Assert.Equal(firstBranchId, managerBranch.BranchId);
         Assert.Equal(firstOrderedRequest.TotalValue, managerBranch.TotalValue);
 
+        var managerExportResponse = await _client.GetAsync(
+            $"/api/organizations/{organizationId}/dashboard/spending/export");
+
+        Assert.Equal(HttpStatusCode.OK, managerExportResponse.StatusCode);
+        Assert.StartsWith("text/csv", managerExportResponse.Content.Headers.ContentType?.MediaType);
+        var managerCsv = await managerExportResponse.Content.ReadAsStringAsync();
+        Assert.Contains("Period,BranchId,BranchName,TotalValue,Currency", managerCsv);
+        Assert.Contains(firstBranchId.ToString(), managerCsv);
+        Assert.DoesNotContain(secondBranchId.ToString(), managerCsv);
+        Assert.Contains(
+            firstOrderedRequest.TotalValue.ToString("0.00", CultureInfo.InvariantCulture),
+            managerCsv);
+
         await AuthenticateAsync(procurementEmail);
 
         var procurementResponse = await _client.GetAsync(
@@ -1186,6 +1200,14 @@ public sealed class PurchaseRequestsApiInMemoryIntegrationTests : IDisposable
         Assert.Equal(3m, procurementProduct.TotalQuantity);
         Assert.Equal(2, procurementProduct.RequestCount);
         Assert.Equal(2, procurementPayload.Data.SpendingByBranch.Count);
+
+        var procurementExportResponse = await _client.GetAsync(
+            $"/api/organizations/{organizationId}/dashboard/spending/export");
+        var procurementCsv = await procurementExportResponse.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, procurementExportResponse.StatusCode);
+        Assert.Contains(firstBranchId.ToString(), procurementCsv);
+        Assert.Contains(secondBranchId.ToString(), procurementCsv);
     }
 
     public void Dispose()

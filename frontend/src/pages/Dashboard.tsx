@@ -1,4 +1,4 @@
-import { Building2, ClipboardList, Package, RefreshCw, TrendingUp } from 'lucide-react';
+import { Building2, ClipboardList, Download, Package, RefreshCw, TrendingUp } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -31,11 +31,15 @@ function getRoleLabel(role: BusinessRole): string {
 function PurchaseRequestDashboardOverview() {
   const [dashboard, setDashboard] = useState<PurchaseRequestDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setExportError(null);
 
     try {
       const membershipResponse = await organizationApi.getCurrentMembership();
@@ -48,8 +52,11 @@ function PurchaseRequestDashboardOverview() {
         throw new Error('Purchase request dashboard response missing data.');
       }
 
+      setOrganizationId(membershipResponse.data.organizationId);
       setDashboard(dashboardResponse.data);
     } catch (caughtError) {
+      setDashboard(null);
+      setOrganizationId(null);
       setError(getApiErrorMessage(caughtError, { defaultMessage: 'Unable to load the purchase request dashboard.' }));
     } finally {
       setLoading(false);
@@ -60,6 +67,31 @@ function PurchaseRequestDashboardOverview() {
     void loadDashboard();
   }, [loadDashboard]);
 
+  const exportSpending = async () => {
+    if (!organizationId) {
+      return;
+    }
+
+    setExporting(true);
+    setExportError(null);
+
+    try {
+      const blob = await purchaseRequestApi.downloadSpendingCsv(organizationId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `procureflow-spending-${new Date().toISOString().slice(0, 7)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (caughtError) {
+      setExportError(getApiErrorMessage(caughtError, {
+        defaultMessage: 'Unable to export branch spending.',
+      }));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <section className="dashboard" aria-labelledby="purchase-request-dashboard-heading">
       <header className="dashboard__header page-shell__header">
@@ -68,15 +100,26 @@ function PurchaseRequestDashboardOverview() {
           <h2 id="purchase-request-dashboard-heading">Purchase request overview</h2>
           {dashboard ? <p className="page-note">Scope: {getRoleLabel(dashboard.scopeRole)}</p> : null}
         </div>
-        <button
-          className="button button--ghost"
-          type="button"
-          onClick={() => void loadDashboard()}
-          disabled={loading}
-        >
-          <RefreshCw aria-hidden="true" size={17} />
-          Refresh
-        </button>
+        <div className="hero__actions">
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={() => void exportSpending()}
+            disabled={loading || exporting || !organizationId || !dashboard}
+          >
+            <Download aria-hidden="true" size={17} />
+            {exporting ? 'Exporting...' : 'Export spending CSV'}
+          </button>
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={() => void loadDashboard()}
+            disabled={loading}
+          >
+            <RefreshCw aria-hidden="true" size={17} />
+            Refresh
+          </button>
+        </div>
       </header>
 
       {loading ? <div className="page-state" role="status">Loading purchase request dashboard...</div> : null}
@@ -89,6 +132,7 @@ function PurchaseRequestDashboardOverview() {
           </button>
         </div>
       ) : null}
+      {exportError ? <p className="form__error" role="alert">{exportError}</p> : null}
 
       {!loading && !error && dashboard ? (
         <>
