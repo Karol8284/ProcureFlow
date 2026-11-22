@@ -3,10 +3,10 @@
 Projekt używa GitHub Actions. Pipeline jest podzielony na CI, które sprawdza kod, oraz CD, które publikuje obrazy Docker.
 
 > [!NOTE]
-> Pipeline jest częścią działającego fundamentu technicznego ProcureFlow. Nazwy
-> obrazów `dotnet-react-starter-*` są odziedziczonymi identyfikatorami
-> operacyjnymi używanymi przez workflow, Compose, staging i rollback. Pozostają
-> niezmienione do kontrolowanej decyzji PF6; nie oznaczają nazwy produktu.
+> Nazwy obrazów `dotnet-react-starter-*` są identyfikatorami zgodności
+> operacyjnej używanymi przez workflow, Compose, staging i rollback. Nie
+> oznaczają nazwy produktu. Zmiana wymaga jednoczesnej migracji obrazów,
+> skryptów, wolumenów i backupów.
 
 ## CI
 
@@ -34,10 +34,15 @@ CI składa się z czterech jobów:
    - uruchamia `npm run test:once`;
    - uruchamia `npm run build`.
 
-3. **Docker Compose smoke tests**
-   - czeka na przejście backendu i frontendu;
+3. **Production deployment configuration**
+   - waliduje produkcyjny i stagingowy model Compose;
+   - sprawdza składnię skryptów deploymentu, rollbacku, backupu i restore;
+   - waliduje konfigurację Caddy, Prometheus i Alertmanager.
+
+4. **Docker Compose smoke tests**
+   - czeka na przejście backendu, frontendu i konfiguracji deploymentu;
    - buduje i uruchamia cały stack przez Docker Compose;
-   - sprawdza health endpoint backendu i frontend przez testy `E2ETests`;
+   - uruchamia testy `E2ETests` oraz przeglądarkowe Playwright;
    - przy błędzie zapisuje logi kontenerów;
    - zawsze zatrzymuje i usuwa kontenery oraz wolumeny testowe.
 
@@ -47,7 +52,8 @@ Jeżeli dowolny wymagany job zakończy się błędem, Pull Request nie powinien 
 
 Workflow znajduje się w `.github/workflows/cd.yml`.
 
-Uruchamia się po pomyślnym zakończeniu CI dla `main` albo ręcznie. Buduje i publikuje dwa obrazy do GitHub Container Registry:
+Uruchamia się po pomyślnym zakończeniu CI dla `main` albo ręcznie. Skanuje i
+publikuje dwa obrazy do GitHub Container Registry:
 
 ```text
 ghcr.io/<owner>/dotnet-react-starter-backend:<commit-sha>
@@ -80,7 +86,7 @@ automatycznie.
 - Tag SHA pozwala wskazać dokładny kod, który został zbudowany.
 - W produkcji należy wdrażać konkretny tag SHA, a nie ruchomy tag.
 
-## Lokalna odpowiednik pipeline'u
+## Lokalny odpowiednik pipeline'u
 
 Backend i frontend:
 
@@ -113,3 +119,6 @@ Po skonfigurowaniu chronionego środowiska `staging` job wdrożeniowy:
 4. wdraża aplikację na VPS;
 5. sprawdza health endpointy i uruchamia Playwright przez publiczny HTTPS;
 6. zatrzymuje workflow przy nieudanym smoke teście.
+
+Ostateczne kryteria release są w
+[liście kontrolnej release](RELEASE_CHECKLIST.md).
