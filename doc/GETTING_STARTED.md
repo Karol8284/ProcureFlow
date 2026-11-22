@@ -1,102 +1,166 @@
-# Getting started
+# Getting Started
+
+Ten dokument prowadzi przez uruchomienie bieżącej wersji ProcureFlow i wskazuje
+właściwą kolejność czytania dokumentacji.
+
+## When To Read This Document
+
+Czytaj ten plik, gdy konfigurujesz środowisko lokalne, uruchamiasz projekt po raz pierwszy albo szukasz podstawowych komend developerskich.
+
+> [!IMPORTANT]
+> PF0-PF6 są zaimplementowane w lokalnym release candidate. Uruchomiona aplikacja
+> udostępnia aktywny workflow ProcureFlow bez demonstracyjnych modułów `Projects` i
+> `ProjectTasks`. Staging, backup/restore drill i formalny tag `v1.0.0` wymagają
+> jeszcze review release. Kolejność prac definiuje
+> [roadmapa produktu](ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md).
 
 ## Prerequisites
 
+Do uruchomienia projektu lokalnie potrzebujesz:
+
 - .NET 10 SDK
-- Node.js 22.x and npm
-- Docker with Docker Compose
-- PostgreSQL only if the backend is run outside the Compose stack
+- Node.js 22.x
+- Docker Desktop z Docker Compose, jeśli uruchamiasz pełny stack w kontenerach
+- PostgreSQL lokalnie albo PostgreSQL uruchomionego przez Docker Compose
 
-## Docker Compose
+## Configuration
 
-From the repository root:
+Backend czyta konfigurację w tej kolejności:
+
+1. `backend/API/appsettings.json`
+2. `backend/API/appsettings.Development.json`
+3. zmienne środowiskowe, User Secrets albo konfigurację hostingu
+
+Frontend używa publicznych wartości build-time z prefiksem `VITE_`.
+
+Dla lokalnego uruchomienia frontendu względem API ustaw w `frontend/.env.development.local`:
+
+```text
+VITE_API_URL=http://localhost:5000
+```
+
+Dla frontendu za nginx reverse proxy użyj:
+
+```text
+VITE_API_URL=/api
+```
+
+Sekretów nie umieszczaj w plikach `VITE_*`.
+
+## Run With Docker Compose
+
+W katalogu głównym projektu:
 
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Endpoints:
+Domyślne adresy:
 
 - frontend: `http://localhost:3000`
 - API: `http://localhost:5000`
-- health: `http://localhost:5000/health`
+- health endpoint: `http://localhost:5000/health`
 - liveness: `http://localhost:5000/health/live`
 - readiness: `http://localhost:5000/health/ready`
 - worker health: `http://localhost:5000/health/workers`
-- Swagger: `http://localhost:5000/swagger`
+- Swagger UI: `http://localhost:5000/swagger`
 - Mailpit: `http://localhost:8025`
 
-Stop without deleting persistent data:
+Mailpit pozwala lokalnie odczytywać linki confirm email i kody 2FA bez wysyłania prawdziwych wiadomości.
+
+Zatrzymanie środowiska:
 
 ```powershell
 docker compose down
 ```
 
-`docker compose down -v` deletes the local database, attachment data, and Data
-Protection keys. It is a destructive reset, not a normal shutdown command.
+Usunięcie również danych z wolumenów:
 
-## Backend without Docker
+```powershell
+docker compose down -v
+```
 
-Provide a PostgreSQL connection string and the required secrets through User
-Secrets, environment variables, or another local secret store.
+Ta komenda trwale usuwa lokalną bazę, załączniki MinIO i klucze Data Protection.
+Nie używaj jej jako zwykłego sposobu zatrzymania środowiska.
+
+## Run Backend Locally
+
+W katalogu głównym:
 
 ```powershell
 dotnet restore backend/backend.slnx
 dotnet run --project backend/API/API.csproj
 ```
 
-Configuration is loaded from `appsettings.json`,
-`appsettings.Development.json`, and environment-specific providers.
+Przed uruchomieniem zapewnij działający PostgreSQL oraz poprawne wartości `DefaultConnection` i `Jwt__Secret` w środowisku lokalnym lub User Secrets.
 
-## Frontend without Docker
+## Run Frontend Locally
+
+W osobnym terminalu:
 
 ```powershell
 Set-Location frontend
-npm ci
-Copy-Item .env.example .env.development.local
+npm install
 npm start
 ```
 
-For a local backend, set:
+Frontend będzie dostępny pod `http://localhost:3000`.
 
-```env
-VITE_API_URL=http://localhost:5000
-```
+## Test And Build Commands
 
-For nginx proxying, use `VITE_API_URL=/api`. Variables beginning with `VITE_`
-are public build-time values and must never contain secrets.
-
-## Build and test
+Backend:
 
 ```powershell
-dotnet build backend/backend.slnx --configuration Release
-dotnet test backend/UnitTests/UnitTests.csproj --configuration Release
-dotnet test backend/IntegrationTests/IntegrationTests.csproj --configuration Release
-dotnet test backend/E2ETests/E2ETests.csproj --configuration Release
+dotnet build backend/backend.slnx
+dotnet test backend/UnitTests/UnitTests.csproj
+dotnet test backend/IntegrationTests/IntegrationTests.csproj
+dotnet test backend/E2ETests/E2ETests.csproj
+```
+
+Testy integracyjne używają szybkiego providera InMemory dla większości przypadków. `PostgreSqlIntegrationTests` uruchamiają osobny kontener PostgreSQL przez Testcontainers i weryfikują prawdziwe migracje EF Core, dlatego wymagają działającego Docker Desktop:
+
+```powershell
+docker info
+dotnet test backend/IntegrationTests/IntegrationTests.csproj --filter "FullyQualifiedName~PostgreSqlIntegrationTests"
+```
+
+Testy E2E wymagają uruchomionej aplikacji i poprawnego środowiska testowego.
+
+Frontend:
+
+```powershell
 Set-Location frontend
 npm run test:once
 npm run build
-Set-Location ..
 ```
 
-PostgreSQL integration tests require Docker. The full local gate, including
-container smoke and browser tests, is:
+## Documentation Reading Order
 
-```powershell
-.\scripts\Invoke-E2ETests.ps1
-```
+Zalecana kolejność:
 
-## Troubleshooting
+1. [Mapa dokumentacji](README.md) - źródła prawdy i status dokumentów
+2. [Roadmapa ProcureFlow](ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md) - zakres i kolejność produktu
+3. [Architektura](ARCHITECTURE.md) - stan bieżący i docelowe granice modułów
+4. [Backend setup](BACKEND_SETUP.md) - backend, konfiguracja i persistence
+5. [Frontend setup](FRONTEND_SETUP.md) - bootstrap, routing i warstwa API
+6. [JWT architecture](JWT_ARCHITECTURE.md) - sesja, JWT i refresh token rotation
+7. [Email and 2FA flows](EMAIL_2FA_FLOWS.md) - confirm email, 2FA i reset hasła
+8. [Adding features](ADDING_FEATURES.md) - workflow rozszerzania produktu
 
-Check, in order:
+## Troubleshooting Order
 
-1. Docker, .NET, Node.js, and PostgreSQL availability.
-2. Backend secrets and connection-string configuration.
-3. `GET /health/live`, then `GET /health/ready`.
-4. `GET /api/runtime-config`.
-5. Frontend `VITE_API_URL` and browser network requests.
-6. Container or process logs using the request correlation ID.
+Gdy aplikacja nie startuje, sprawdź kolejno:
 
-For deployment troubleshooting, use the
-[deployment runbook](DEPLOYMENT_RUNBOOK.md).
+1. czy Docker, PostgreSQL, .NET SDK i Node.js są dostępne
+2. czy backend ma poprawne sekrety i connection string
+3. czy API odpowiada pod `http://localhost:5000/health/live`
+4. czy baza jest gotowa pod `http://localhost:5000/health/ready`
+5. czy frontend używa właściwego `VITE_API_URL`
+6. logi kontenerów albo terminala procesu, który nie wystartował
+
+## See Also
+
+- [Główny README](../README.PL.md) - aktualny opis produktu i komendy
+- [Techniczna roadmapa fundamentu](ROADMAP/00_ROADMAP_OVERVIEW.md) - historia V1-V8
+- [Backendowa roadmapa produktu](../backend/DEVELOPMENT_ROADMAP.md) - skrócony indeks PF0-PF7

@@ -1,82 +1,217 @@
-# Frontend setup
+# Frontend Setup
 
-The frontend is a React 19 and TypeScript application built by Vite.
+Ten dokument opisuje aktualną strukturę frontendu ProcureFlow i sposób
+utrzymania kompletnego interfejsu docelowego workflow zakupowego ProcureFlow.
 
-## Responsibilities
+## When To Read This Document
 
-- Public and protected routing.
-- Session and runtime-configuration bootstrap.
-- Authentication, 2FA, profile, organization, catalog, and purchase-request UI.
-- Typed API clients and consistent loading/error states.
-- UI feature gating and product navigation.
+Czytaj ten plik, gdy zmiana dotyczy stron, routingu, contextów, hooków, klienta API, formularzy albo runtime feature flags po stronie frontendu.
 
-## Structure
+## Current Frontend Responsibilities
 
-- `src/components/`: application shell and reusable UI.
-- `src/context/`: auth, runtime configuration, and notification state.
-- `src/hooks/`: context access and feature availability.
-- `src/pages/`: route-level screens.
-- `src/services/api/`: typed backend clients.
-- `src/types/`: request and response contracts.
-- `src/utils/`: validation and formatting.
-- `src/tests/`: component, page, context, and service tests.
-- `e2e/`: Playwright workflows.
+Frontend odpowiada za:
 
-## Bootstrap
+- routing aplikacji
+- renderowanie publicznych i chronionych ekranów
+- bootstrap sesji użytkownika
+- bootstrap runtime feature flags
+- wyświetlanie stanu auth, 2FA i profilu
+- komunikację z backendem przez centralny HTTP client
 
-`RuntimeConfigProvider` loads `/api/runtime-config`, while `AuthProvider`
-restores the authenticated session. `AppBootstrapGate` waits for both before
-rendering the shell.
+## Product Migration Boundary
 
-The access token is stored by the client; the refresh token stays in an
-HttpOnly cookie. `HttpClient` includes credentials and can retry one request
-after a successful token refresh.
+Frontend zawiera aktywne ekrany `Organizations`, `Catalog` i `PurchaseRequests`
+oraz wspólny shell auth/runtime config. Trasy i konsumenci domeny `Projects` oraz
+`ProjectTasks` zostały usunięte w PF6 po przejściu krytycznego browser E2E.
 
-## Routing and authorization
+Frontend może wykorzystać istniejący shell, auth bootstrap, `HttpClient`, obsługę
+błędów, formularze i runtime config. Nie powinien jednak kopiować nazw, typów ani
+założeń autoryzacyjnych `ProjectTask` do nowych kontraktów zakupowych.
 
-`AppRoutes.tsx` owns route classification. Protected and admin routes are
-handled centrally.
+Aktualną kolejność definiuje
+[roadmapa ProcureFlow](ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md).
 
-Frontend feature flags and hidden controls are UX decisions. The backend
-remains responsible for authorization and must reject requests that bypass the
-UI.
+## Frontend Structure
 
-## Forms and API contracts
+Najważniejsze katalogi w `frontend/src/`:
 
-Forms use React Hook Form and Zod. Domain API contracts live in
-`src/types/`, and HTTP calls use focused clients from `src/services/api/`.
+- `components/` - komponenty UI i shell aplikacji
+- `context/` - globalny stan auth i runtime config
+- `hooks/` - hooki dostępowe i feature gating
+- `pages/` - strony aplikacji
+- `services/` - komunikacja z API
+- `types/` - typy TypeScript
+- `utils/` - walidacja i funkcje pomocnicze
+- `tests/` - testy frontendowe
 
-Every new product screen should handle:
+## Bootstrap Order
 
-- initial loading;
-- empty results;
-- API failure;
-- validation failure;
-- stale `409 Conflict` recovery where relevant.
+Frontend nie renderuje od razu całego UI.
 
-## Development
+Kolejność startu jest taka:
 
-```powershell
-Set-Location frontend
-npm ci
-npm start
-```
+1. `RuntimeConfigProvider` ładuje `GET /api/runtime-config`.
+2. `AuthProvider` próbuje odtworzyć sesję z localStorage i refresh token cookie.
+3. `AppBootstrapGate` czeka aż auth i runtime config przestaną być w stanie loading.
+4. Dopiero potem renderuje się `AppShell`.
 
-Use `frontend/.env.development.local`:
+To ogranicza migotanie UI i przypadkowe pokazywanie elementów, które po chwili miałyby zniknąć.
 
-```env
-VITE_API_URL=http://localhost:5000
-```
+## State Management Pattern
 
-All `VITE_*` values become public at build time. Never put secrets in them.
+Frontend nie używa tu osobnego store typu Redux czy Zustand.
 
-## Validation
+Zamiast tego główne stany globalne są trzymane w contextach:
 
-```powershell
-npm run test:once
-npm run build
-npm run test:e2e
-```
+- `AuthContext`
+- `RuntimeConfigContext`
 
-Playwright tests require the expected frontend, backend, and Mailpit URLs. The
-full Compose setup is started by `.\scripts\Invoke-E2ETests.ps1`.
+Pattern jest prosty:
+
+- context przechowuje stan i metody
+- hook udostępnia wygodny dostęp
+- komponenty korzystają tylko z hooka, nie z surowego contextu
+
+## API Layer Pattern
+
+Warstwa API jest scentralizowana.
+
+Najważniejszy plik:
+
+- `frontend/src/services/api/HttpClient.ts`
+
+Ten klient odpowiada za:
+
+- budowanie `baseUrl`
+- dołączanie access tokenu do requestów
+- wysyłanie `credentials: 'include'` dla refresh token cookie
+- retry po `401`, jeśli da się odświeżyć sesję
+- mapowanie błędów i generowanie globalnych notice
+
+Na nim opierają się konkretne klienty, np. auth, users i runtime config.
+
+## Authentication on the Frontend
+
+Najważniejsze miejsca auth po stronie UI:
+
+- `context/AuthContext.tsx`
+- `hooks/useAuth.ts`
+- `components/UI/ProtectedRoute.tsx`
+- strony auth w `pages/`
+
+Frontend przechowuje:
+
+- access token w localStorage
+- user snapshot w localStorage
+- pending 2FA challenge w sessionStorage
+
+Frontend nie ma dostępu do refresh tokenu, bo ten siedzi w HttpOnly cookie.
+
+## Runtime Config Pattern
+
+Runtime feature flags są ładowane z backendu podczas startu aplikacji.
+
+Najważniejsze pliki:
+
+- `context/RuntimeConfigContext.tsx`
+- `hooks/useRuntimeConfig.ts`
+- `hooks/useFeatureAvailability.ts`
+- `types/runtimeConfig.ts`
+
+Zasada jest ważna:
+
+- `RuntimeConfigContext` zna pełny obiekt runtime config
+- `useFeatureAvailability()` wystawia już uproszczone booleany dla UI
+- komponenty nie powinny samodzielnie parsować odpowiedzi API
+
+## Where Feature Flags Affect the UI
+
+Aktualnie flagi sterują między innymi:
+
+- quick search w navbarze
+- widocznością dashboardu
+- widocznością sekcji admin
+- widocznością listy użytkowników
+- sekcjami związanymi z email features
+- dostępnością flow 2FA
+
+Ukrycie trasy lub przycisku przez flagę jest decyzją UX i nigdy nie zastępuje
+autoryzacji backendowej.
+
+Najważniejsze miejsca użycia:
+
+- `components/UI/Navbar.tsx`
+- `components/AppRoutes.tsx`
+- `pages/Home.tsx`
+- `pages/Dashboard.tsx`
+- `components/UI/AppBootstrapGate.tsx`
+
+## Routing Pattern
+
+Routing jest zebrany centralnie w `components/AppRoutes.tsx`.
+
+Podział odpowiedzialności:
+
+- strony publiczne są definiowane bez wrappera
+- strony chronione są pod `ProtectedRoute`
+- trasy admina dodatkowo sprawdzają role
+- runtime flags dodatkowo sterują widocznością tras i redirectami
+
+To znaczy, że decyzje o dostępności ekranów powinny trafiać najpierw do routingu i shella, a dopiero później do konkretnej strony.
+
+## Forms and Validation
+
+Formularze opierają się o:
+
+- `react-hook-form`
+- `zod`
+- `@hookform/resolvers`
+
+Schemat jest prosty:
+
+1. definicja schematu w `utils/`
+2. inferowany typ formularza
+3. `useForm()` z `zodResolver`
+4. request do API klienta
+
+## Environment Configuration
+
+Frontend używa tylko publicznych wartości build-time z prefiksem `VITE_`.
+
+Najważniejsza zmienna:
+
+- `VITE_API_URL`
+
+Przykłady:
+
+- local frontend do local backendu: `http://localhost:5000`
+- Docker/nginx reverse proxy: `/api`
+
+Nigdy nie wkładaj sekretów do `VITE_*`.
+
+## Naming Guidelines
+
+Kilka praktycznych zasad nazewnictwa:
+
+- context nazywaj według globalnego obszaru stanu, np. `AuthContext`, `RuntimeConfigContext`
+- hooki dostępowe zaczynaj od `use`, np. `useAuth`, `useRuntimeConfig`, `useFeatureAvailability`
+- strony nazywaj po ekranie lub flow, np. `Login`, `ConfirmEmail`, `ResetPassword`
+- klienty API nazywaj według obszaru odpowiedzialności, np. `AuthApi`, `UserApi`, `RuntimeConfigApi`
+- typy współdzielone grupuj według domeny, a nie losowo
+
+## What Not To Do
+
+- nie traktuj feature flags jako mechanizmu autoryzacji
+- nie odczytuj feature flags bezpośrednio z kilku różnych źródeł
+- nie duplikuj logiki auth w wielu komponentach
+- nie blokuj bezpieczeństwa tylko po stronie frontendu
+- nie dodawaj nowych tras bez decyzji, czy są publiczne, protected czy admin-only
+
+## See Also
+
+- [Mapa dokumentacji](README.md) - źródła prawdy i status migracji
+- [Roadmapa ProcureFlow](ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md) - kolejność ekranów produktu
+- `doc/ARCHITECTURE.md` - pełna mapa projektu i główne zależności między warstwami
+- `doc/JWT_ARCHITECTURE.md` - bootstrap sesji, access token i refresh flow
+- `doc/EMAIL_2FA_FLOWS.md` - ekrany confirm email, verify 2FA i reset hasła w kontekście całego flow
+- `doc/BACKEND_SETUP.md` - endpointy, persistence i konfiguracja, z którymi frontend współpracuje

@@ -172,7 +172,7 @@ Rate limiting jest lokalny dla procesu. Przy wielu instancjach oraz za reverse p
 skonfigurować poprawne forwarded headers, a później rozważyć współdzielony limiter, jeśli
 wymaga tego skala lub model zagrożeń.
 
-Decyzja i lista świadomych ograniczeń są zapisane w [ADR: Authentication brute-force protection](ADR/AUTH_BRUTE_FORCE_PROTECTION.md).
+Decyzja i lista świadomych ograniczeń są zapisane w [ADR-09: Authentication brute-force protection](ROADMAP/09_ADR_AUTH_BRUTE_FORCE_PROTECTION.md).
 
 ## Refresh Token Rotation Flow
 
@@ -205,7 +205,7 @@ If a rotated token is presented again, the request is treated as refresh-token r
 
 Refresh rejects a missing user or an inactive user. A role change is read on the next refresh, while an already issued access token keeps its claims until its normal expiry.
 
-The complete session-policy decision is recorded in [ADR: Authentication session policy](ADR/AUTH_SESSION_POLICY.md).
+The complete session-policy decision is recorded in [`doc/ROADMAP/09_ADR_AUTH_SESSION_POLICY.md`](ROADMAP/09_ADR_AUTH_SESSION_POLICY.md).
 
 ## Logout Flow
 

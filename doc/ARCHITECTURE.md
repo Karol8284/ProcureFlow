@@ -1,152 +1,459 @@
-# ProcureFlow architecture
+# ProcureFlow Architecture
 
-ProcureFlow is a full-stack modular monolith:
+ProcureFlow jest modularnym monolitem full-stack z backendem ASP.NET Core 10 LTS i
+frontendem React 19 + TypeScript. Projekt wykorzystuje stabilny fundament auth,
+persistence, testów i operacji, a domena zakupowa jest zorganizowana wokół
+aktywnych modułów ProcureFlow.
 
-- ASP.NET Core 10 provides the HTTP API and background workers.
-- React 19 provides the browser client.
-- EF Core and one PostgreSQL database provide persistence.
-- Docker Compose provides local and VPS deployment topologies.
+## When To Read This Document
 
-## System boundary
+Czytaj ten plik jako pierwszy dokument techniczny, gdy chcesz zrozumieć granice
+projektu, przepływ informacji oraz odpowiedzialność backendu i frontendu. Zakres
+i kolejność implementacji produktu definiuje osobno
+[roadmapa ProcureFlow](ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md).
 
-```mermaid
-flowchart LR
-    Browser[React frontend] -->|HTTPS / API| API[ASP.NET Core API]
-    API -->|EF Core| DB[(PostgreSQL)]
-    API -->|private object API| Storage[(S3-compatible storage)]
-    API -->|SMTP| Email[Email delivery]
-    API -->|TCP| Scanner[Malware scanner]
-    API --> Workers[Background workers]
-```
+## Architecture States
 
-The browser is not an authorization boundary. The backend derives actor,
-organization, branch, and membership context from authenticated state and
-verified server data.
+Dokument rozróżnia dwa stany:
 
-## Backend modules
+- **current implementation** - kod, endpointy i tabele istniejące obecnie;
+- **target product architecture** - moduły ProcureFlow wdrażane w kolejności PF1-PF6.
 
-### Accounts and authentication
+PF6 zakończył lokalny cleanup domeny demonstracyjnej. Historyczne sekcje o
+`Projects` i `ProjectTasks` poniżej pozostają wyłącznie jako zapis wcześniejszych
+wzorców technicznych; nie opisują aktywnych endpointów, encji ani tras.
 
-Handles registration, email confirmation, login, 2FA, JWT access tokens,
-refresh-token rotation, logout, password reset, profiles, and user
-administration.
+## High-Level Overview
 
-### Organizations
+Projekt składa się z dwóch głównych części:
 
-Owns organizations, branches, memberships, and business roles. The current
-MVP supports one active membership per user.
+- `backend/` - API, logika aplikacyjna, domena, baza danych i integracje
+- `frontend/` - interfejs użytkownika, routing, stan sesji, komunikacja z API i feature gating
 
-### Catalog
+Do tego dochodzą:
 
-Owns categories, units of measure, and product records. Reference data is
-modeled explicitly instead of relying on unconstrained strings.
+- `doc/` - dokumentacja techniczna i przewodniki
+- `docker/` oraz `docker-compose.yml` - uruchamianie środowiska kontenerowego
 
-### Purchase requests
+## Target Product Modules
 
-Owns the purchase-request aggregate, items, status history, monthly budgets,
-approval decisions, fulfillment, and attachments. Critical status and budget
-transitions are server-controlled and concurrency-protected.
+Docelowa domena ProcureFlow jest podzielona według odpowiedzialności biznesowej:
 
-### Notifications
+- `Organizations` - organizacja, oddziały, członkostwa i role biznesowe;
+- `Catalog` - kategorie, jednostki miary i produkty;
+- `PurchaseRequests` - draft, pozycje, workflow, budżety i decyzje;
+- `Notifications` - dostarczanie informacji o zdarzeniach ProcureFlow;
+- `Reports` - read modele dodawane dopiero po ustabilizowaniu zapisów produktu.
 
-Owns application notifications, preferences, and durable email outbox work.
-Domain events that require one transaction are staged in the same unit of work
-as the business change.
+`Accounts` i auth pozostają współdzieloną capability techniczną. `PurchaseRequest`
+nie jest zmianą nazwy `ProjectTask`, a nowe moduły nie przejmują encji starej domeny.
+Wszystkie moduły pozostają w jednej aplikacji, korzystają z jednego
+`ApplicationDbContext` i jednej bazy PostgreSQL, dopóki mierzalna potrzeba nie
+uzasadni innego podziału.
 
-## Technical layers
+## Backend Structure
+
+Backend jest podzielony na warstwy:
+
+- `API/` - entry point, kontrolery HTTP, middleware, konfiguracja hosta
+- `Application/` - DTO, serwisy aplikacyjne, walidacja, kontrakty
+- `Domain/` - encje, enumy, value objects, reguły domenowe
+- `Infrastructure/` - EF Core, `ApplicationDbContext`, implementacje serwisów i repozytoriów
+- `Shared/` - wspólne response, settings, helpery i DTO współdzielone między backendem i frontendem
+
+Najważniejszy punkt startowy backendu:
+
+- `backend/API/Program.cs` - buduje host, aplikuje migracje, podłącza middleware i mapuje kontrolery
+- `backend/API/Services/ApiServiceCollectionExtensions.cs` - centralny composition root dla serwisów, opcji, auth, CORS i persistence
+
+## Frontend Structure
+
+Frontend jest zorganizowany według odpowiedzialności:
+
+- `src/components/` - reużywalne komponenty UI i shell aplikacji
+- `src/context/` - globalny stan, np. auth i runtime config
+- `src/hooks/` - hooki opakowujące logikę dostępu do contextu i feature flags
+- `src/pages/` - komponenty stron i ekranów
+- `src/services/` - warstwa komunikacji z backendem
+- `src/types/` - kontrakty TypeScript dla requestów, response i stanu
+- `src/utils/` - walidacja i pomocnicza logika frontendu
+
+Najważniejszy punkt startowy frontendu:
+
+- `frontend/src/App.tsx`
+
+Kolejność bootstrapu jest świadoma:
+
+1. `RuntimeConfigProvider` ładuje konfigurację runtime z backendu.
+2. `AuthProvider` odtwarza sesję i ewentualnie odświeża token.
+3. `AppBootstrapGate` blokuje render powłoki aplikacji, dopóki bootstrap się nie zakończy.
+4. `AppShell` renderuje navbar, powiadomienia i routing.
+
+## Information Flow
+
+Najważniejsze przepływy informacji w projekcie:
+
+### Authentication flow
+
+1. Frontend wysyła żądania auth do `/api/auth/*`.
+2. `AuthController` koordynuje logowanie, rejestrację, confirm email, 2FA i refresh token.
+3. `DatabaseAuthService` wykonuje logikę auth opartą o `ApplicationDbContext`.
+4. Access token trafia do frontendu, a refresh token pozostaje w HttpOnly cookie.
+5. `AuthContext` odtwarza sesję podczas startu aplikacji.
+
+### Runtime config flow
+
+1. Backend pobiera ustawienia z `appsettings*.json` i environment variables.
+2. `RuntimeConfigController` zwraca bezpieczne feature flags przez `GET /api/runtime-config`.
+3. `RuntimeConfigContext` pobiera te dane i normalizuje je do bezpiecznych booleanów.
+4. `useFeatureAvailability()` udostępnia prosty interfejs dla komponentów UI.
+5. `Navbar`, `AppRoutes`, `Home`, `Dashboard` i inne widoki podejmują decyzje o widoczności elementów.
+
+### User and admin flow
+
+1. Frontend korzysta z protected routes i roli użytkownika zapisanej w stanie auth.
+2. Backend weryfikuje JWT i role po stronie API.
+3. Frontend używa roli tylko do UX i routingu, nie jako źródła bezpieczeństwa.
+
+### User Domain Boundary
+
+`User` remains a single aggregate root mapped to the existing `Users` table. New instances
+are created through `User.Create(...)`, and profile, account, credential, two-factor, and
+lockout changes go through explicit domain methods instead of public setters. External
+uniqueness checks and configuration-dependent policies remain in application and
+infrastructure services. This boundary intentionally does not split persistence into
+separate profile and security tables.
+
+## Current Database Model
+
+Główna baza jest obsługiwana przez EF Core w `backend/Infrastructure/Data/ApplicationDbContext.cs`.
+
+Poniższa lista opisuje aktywny model po cleanupie PF6. Historyczne migracje
+projektów i zadań pozostają w repozytorium, ale nie są częścią bieżącego modelu.
+
+Najważniejsze tabele/encje:
+
+- `Users`
+- `RefreshTokens`
+- `EmailConfirmationTokens`
+- `EmailTwoFactorChallenges`
+- `PasswordResetRequests`
+- `Organizations`, `Branches`, `Memberships`
+- `UnitsOfMeasure`, `Products`
+- `PurchaseRequests`, `PurchaseRequestItems`, `PurchaseRequestStatusHistories`
+- `BranchMonthlyBudgets`, `PurchaseRequestApprovalDecisions`
+- `PurchaseRequestAttachments`, `PurchaseRequestAttachmentCleanupMessages`
+- `Notifications`, `NotificationEmailPreferences`, `NotificationEmailOutboxMessages`
+
+Relacje są proste i czytelne:
+
+- tokeny, wyzwania i zdarzenia bezpieczeństwa są powiązane z `User`;
+- `Branch` należy do organizacji, a `Membership` łączy użytkownika z organizacją
+  i opcjonalnym oddziałem;
+- produkt należy do organizacji i korzysta z jednostki miary;
+- `PurchaseRequest` przechowuje autora, organizację i oddział oraz jest
+  powiązany z pozycjami, historią statusu, decyzjami i załącznikami;
+- budżet miesięczny jest przypisany do oddziału;
+- powiadomienia, preferencje e-mail i outbox obsługują zdarzenia produktu.
+
+### Project And ProjectTask Domain
+
+> [!NOTE]
+> Ta sekcja opisuje przejściową domenę demonstracyjną. Jest źródłem wiedzy o
+> działających transakcjach, autoryzacji i concurrency, ale nowe funkcje produktu
+> powinny należeć do modułów ProcureFlow.
+
+`Project` posiada podstawowe dane biznesowe, właściciela i stan archiwizacji.
+Archiwizacja jest soft delete: aktywne odczyty pomijają projekt, a aktualizacje
+i tworzenie zadań dla projektu archiwalnego są blokowane.
+
+`Project` i `ProjectTask` są osobnymi aggregate rootami. `ProjectTask.ProjectId` jest
+referencją tożsamościową i kluczem obcym w bazie, ale `Project` nie ładuje ani nie
+mutuje kolekcji zadań jako części własnego modelu domenowego. Zagnieżdżenie endpointów
+zadań pod projektem opisuje nawigację zasobu i kontrolę dostępu, a nie własność
+agregatową.
+
+`ProjectTask` posiada własny cykl życia niezależny od projektu:
+
+- `Todo`, `InProgress`, `Done` jako `ProjectTaskStatus`,
+- `Low`, `Normal`, `High` jako `ProjectTaskPriority`,
+- opcjonalny termin wykonania,
+- opcjonalne przypisanie do aktywnego użytkownika.
+
+Bezpieczeństwo zadań jest sprawdzane w kontekście projektu przez application service.
+Serwis zadaniowy nie wyszukuje zadania wyłącznie po `taskId`; każde zapytanie filtruje
+jednocześnie po `projectId`, właścicielu lub członkostwie użytkownika i aktywnym stanie
+projektu. Dzięki temu identyfikator zadania nie może ominąć kontroli dostępu.
+
+### Project Invitation Acceptance, Transactions And Concurrency
+
+`Project` jest aggregate rootem dla `ProjectMember`. Dodanie, zmiana roli i usunięcie
+członka przechodzą przez metody domenowe projektu, a bezpośrednie tworzenie członków
+jest ograniczone do fabryki encji i warstwy persistence. Dzięki temu właściciel
+projektu nie może zostać dodany drugi raz, usunięty ani zdegradowany do innej roli.
+
+Akceptacja zaproszenia jest wieloetapowym przypadkiem użycia. Handler stage'uje w
+jednym scoped `ApplicationDbContext`:
+
+- dodanie członka przez `Project.AddMember`;
+- zmianę statusu zaproszenia i wpis aktywności;
+- zapis powiadomienia oraz `NotificationEmailOutboxMessage`.
+
+Jeden końcowy `SaveChangesAsync` wykonuje relacyjną transakcję dla wszystkich
+śledzonych zmian. Writer powiadomienia i email outbox nie wykonuje własnego commitu.
+Błąd zapisu wycofuje więc całą akceptację, zamiast zostawić członkostwo bez
+powiadomienia. Atomowość i równoległa odpowiedź są weryfikowane na PostgreSQL.
+
+Bezpośrednie dodanie członka działa analogicznie. Usunięcie członka używa jawnego
+write portu należącego do `ProjectTasks`, aby stage'ować unassign zadań bez
+przekazywania encji między modułami i bez drugiego commitu. Membership, task
+assignments i activity zostają zapisane atomowo.
+
+`Project.ConcurrencyStamp` chroni równoległe zmiany agregatu, a
+`ProjectInvitation.ConcurrencyStamp` chroni przejścia stanu zaproszenia. Dodatkowo
+unikalny indeks `(ProjectId, UserId)` pozostaje obroną membership na poziomie bazy.
+Naruszenie tego indeksu podczas równoległej akceptacji jest mapowane na wynik
+konfliktu, który kontroler zwraca jako `409 Conflict`.
+
+Tworzenie zaproszeń ma osobną ochronę przed wyścigiem check-then-insert. Częściowy
+unikalny indeks `(ProjectId, InvitedUserId, Status)` obejmuje wyłącznie rekordy ze
+statusem `Pending`, dlatego historia `Accepted`, `Declined` i `Expired` pozostaje
+nieograniczona. Przed utworzeniem kolejnego zaproszenia handler oznacza wygasłe
+rekordy `Pending` jako `Expired`. Naruszenie indeksu przez dwa równoległe żądania
+jest mapowane na `409 Conflict`, a test PostgreSQL potwierdza, że w bazie pozostaje
+tylko jedno aktywne zaproszenie.
+
+`ProjectTask.ConcurrencyStamp` chroni niezależne zmiany zadania. Aktualizacja danych,
+zmiana statusu i usunięcie wymagają wersji odczytanej przez klienta; po udanym zapisie
+token jest rotowany, a nieaktualna wersja jest mapowana na `409 Conflict` bez
+nadpisania nowszego zapisu.
+
+### ProjectTasks As An Incremental Modular-VSA Module
+
+`ProjectTasks` jest pierwszym modułem biznesowym rozwijanym w kierunku hybrydowego
+modularnego monolitu z vertical slices. Moduł pozostaje częścią jednego procesu,
+jednego `ApplicationDbContext` i jednej bazy PostgreSQL. Jego przypadki użycia są
+wydzielane według odpowiedzialności, a nie dokładane do jednego dużego serwisu.
+
+CRUD zadań oraz capability komentarzy, załączników i przypomnień mają własne
+kontrakty, handlery, adaptery HTTP i rejestracje modułowe:
 
 ```text
-API
-  Controllers, request/response DTOs, validation, middleware
-Application
-  Use cases, focused ports, orchestration
-Domain
-  Entities, value objects, invariants, status transitions
-Infrastructure
-  EF Core stores, integrations, background workers, migrations
-Shared
-  Cross-boundary response and settings contracts
+Application/Modules/ProjectTasks/<UseCase>/
+API/Modules/ProjectTasks/<UseCase>/
+Infrastructure/Modules/ProjectTasks/<UseCase>/
+UnitTests/Modules/ProjectTasks/<UseCase>/
 ```
 
-New work should use a focused vertical slice:
+Przejściowo współdzielone pozostają `IProjectTaskAccess`, `IProjectTaskCommandStore`
+oraz `ProjectTaskView`, ponieważ są używane przez kilka slice'ów. Dashboard korzysta
+już z jawnego `IProjectTaskDashboardReader` należącego do `ProjectTasks`.
+
+Przepływ dla odczytu listy zadań wygląda następująco:
 
 ```text
-API/Modules/<Module>/<UseCase>/
-Application/Modules/<Module>/<UseCase>/
-Infrastructure/Modules/<Module>/<UseCase>/
-UnitTests/Modules/<Module>/<UseCase>/
+ListProjectTasksController
+	|
+IListProjectTasksHandler
+	|
+ListProjectTasksHandler
+	|
+IProjectTaskAccess + IListProjectTasksQueryStore
+	|
+EfProjectTaskAccess + EfProjectTaskQueryStore
+	|
+ApplicationDbContext / PostgreSQL
 ```
 
-A folder is not a boundary by itself. The boundary is complete only when
-dependencies point inward, registration is module-local, and tests cover the
-public behavior.
+Przepływ command slice'a aktualizacji zadania używa tej samej granicy:
 
-## Important flows
+```text
+UpdateProjectTaskController
+	|
+IUpdateProjectTaskHandler
+	|
+UpdateProjectTaskHandler
+	|
+IProjectTaskAccess + IProjectTaskCommandStore
+	|
+EfProjectTaskAccess + EfProjectTaskCommandStore
+	|
+ApplicationDbContext / PostgreSQL
+```
 
-### Authentication
+Komentarze, załączniki i przypomnienia są capability tego samego modułu, ale ich
+handlery i porty pozostają osobnymi slice'ami:
 
-1. Credentials are verified by the auth service.
-2. The backend either issues a session or starts an email 2FA challenge.
-3. Access-token claims are used only after framework token validation.
-4. The refresh token is held in an HttpOnly cookie and rotated in the database.
-5. The frontend stores the access token and rebuilds the user session through
-   `/api/auth/me`.
+```text
+CreateProjectTaskAttachmentController
+	|
+ICreateProjectTaskAttachmentHandler
+	|
+CreateProjectTaskAttachmentHandler
+	|
+ICreateProjectTaskAttachmentStore
+	|
+ApplicationDbContext / PostgreSQL
+```
 
-Details: [JWT architecture](JWT_ARCHITECTURE.md) and
-[email flows](EMAIL_2FA_FLOWS.md).
+`IProjectTaskAccess`, `IListProjectTasksQueryStore`, `IProjectTaskCommandStore`,
+`IProjectTaskMemberAssignmentWriter` oraz `IProjectTaskDashboardReader` są portami
+przypadków użycia, a nie generycznym repository.
+Dzięki temu kontrakty
+opisują rzeczywiste potrzeby funkcji: kontrolę dostępu, listowanie z filtrami oraz
+zapis zmian zadania. Implementacje EF pozostają w `Infrastructure`, a kontrolery
+nie znają `ApplicationDbContext`.
 
-### Purchase-request transition
+Rozdzielenie query i command nie oznacza wprowadzenia MediatR, RabbitMQ ani event
+busa. Jest to lokalny podział odpowiedzialności w ramach modularnego monolitu,
+który zachowuje istniejące endpointy, migracje i model relacyjny.
 
-1. The API authenticates the caller and validates input.
-2. A use case resolves current membership and authorizes the resource.
-3. The aggregate validates the state transition.
-4. EF Core stages domain data, status history, budget changes, notifications,
-   and outbox records when they must be atomic.
-5. One `SaveChangesAsync` commits the transaction.
-6. A stale concurrency token maps to `409 Conflict`.
+Rejestracja zależności tasków jest skupiona w `ProjectTasksModule.AddProjectTasksModule`.
+Composition root wywołuje jeden extension modułu, zamiast znać każdą implementację
+tasków osobno. Nie oznacza to jeszcze osobnego projektu .NET ani osobnej bazy; te
+decyzje pozostają odłożone do czasu, gdy granice zostaną potwierdzone większą liczbą
+slice'ów i realnymi potrzebami utrzymania.
 
-### Frontend bootstrap
+### Projects As A Business Module With Vertical Slices
 
-1. Runtime configuration is loaded from `/api/runtime-config`.
-2. The auth context attempts session restoration.
-3. The bootstrap gate waits for both results.
-4. The application renders protected routes and the shell.
+Backendowy obszar `Projects` ma osobne slice'y dla lifecycle, membership,
+invitations, activity i dashboardu. Każdy endpoint zależy od focused handlera,
+a implementacje EF są podłączane wyłącznie przez
+`ProjectsModule.AddProjectsModule`. Nie istnieje już szeroki
+`IProjectManagementService`, `IProjectMembershipStore` ani project invitation
+service.
 
-Runtime feature flags affect navigation and availability, not server-side
-authorization.
+Dashboard ilustruje kontrolowaną współpracę modułów:
 
-## Persistence
+```text
+GetProjectDashboardController
+    |
+IGetProjectDashboardHandler
+    |
+GetProjectDashboardHandler
+    |-- IGetProjectDashboardStore (access + Projects activity)
+    `-- IProjectTaskDashboardReader (ProjectTasks metrics + due tasks)
+```
 
-The active database model includes:
+Usunięcie członka używa `IProjectTaskMemberAssignmentWriter` z modułu
+`ProjectTasks`. Oba porty przekazują identyfikatory i read modele zamiast encji.
+Wspólna baza i scoped context pozwalają zachować atomowy zapis, ale zależność jest
+jawna i testowalna.
 
-- users and security tokens;
-- organizations, branches, and memberships;
-- categories, units of measure, and products;
-- purchase requests, items, history, decisions, budgets, and attachments;
-- notifications, email preferences, and email outbox messages.
+Przypisanie zadania jest dodatkowo walidowane względem aktywnego członkostwa
+w projekcie. Zarządzanie członkami jest dostępne wyłącznie właścicielowi projektu,
+a usunięcie członka czyści jego przypisania do zadań.
 
-Historical EF migrations can mention retired starter entities. They must not be
-treated as active modules.
+Endpointy zadań są zagnieżdżone pod projektem:
 
-## Operations
+```text
+GET    /api/projects/{projectId}/tasks
+POST   /api/projects/{projectId}/tasks
+GET    /api/projects/{projectId}/tasks/{taskId}
+PUT    /api/projects/{projectId}/tasks/{taskId}
+PATCH  /api/projects/{projectId}/tasks/{taskId}/status
+DELETE /api/projects/{projectId}/tasks/{taskId}
+```
 
-- `/health/live` checks the process.
-- `/health/ready` checks required readiness dependencies.
-- `/health/workers` reports durable-worker freshness.
-- `/health/storage`, `/health/malware-scanner`, and `/health/email` expose
-  dependency-specific status.
-- Each response receives an `X-Correlation-ID`.
+Endpointy członków projektu:
 
-Deployment, backup, restore, and rollback are documented in the
-[deployment runbook](DEPLOYMENT_RUNBOOK.md).
+```text
+GET    /api/projects/{projectId}/members
+GET    /api/projects/{projectId}/members/available
+POST   /api/projects/{projectId}/members
+DELETE /api/projects/{projectId}/members/{userId}
+```
 
-## Architecture constraints
+Szczegółowy workflow dodawania tej funkcji znajduje się w `doc/ADDING_FEATURES.md`.
 
-- Keep one modular monolith and one PostgreSQL database unless a measured
-  constraint proves another boundary.
-- Keep domain invariants outside controllers and EF adapters.
-- Use explicit ports for cross-module work; do not query another module's
-  `DbSet` directly.
-- Keep server authorization independent from frontend route visibility.
-- Use an explicit migration for schema changes.
-- Record durable architectural decisions as short ADRs.
+Model obejmuje auth i konta użytkowników oraz przejściową domenę zarządzania
+projektami i zadaniami. Zmiany utrzymaniowe starej domeny nadal respektują granice
+agregatów `Project` i `ProjectTask`. Nowe funkcje biznesowe powinny natomiast
+respektować granice `Organizations`, `Catalog` i `PurchaseRequests` określone w
+roadmapie produktu.
+
+## Observability And Background Work
+
+API używa middleware korelacji żądań oraz Seriloga. Nagłówek `X-Correlation-ID` jest zwracany klientowi i trafia do log contextu, co pozwala połączyć wpisy dotyczące jednego żądania.
+
+Health endpoints mają rozdzielone odpowiedzialności:
+
+- `/health/live` nie wykonuje zależności zewnętrznych i służy do liveness;
+- `/health/ready` sprawdza połączenie z bazą;
+- `/health` agreguje podstawową gotowość API i bazy, bez stanu workerów;
+- `/health/workers` raportuje świeżość ostatnich cykli workerów.
+
+Workery `NotificationEmailOutboxWorker`, `ProjectTaskDeadlineReminderWorker` i
+`ProjectTaskAttachmentCleanupWorker` są hostowanymi usługami infrastruktury. Ich
+stan zdrowia jest raportowany dla bieżącej instancji procesu. Email outbox oraz
+attachment cleanup mają trwałe rekordy w bazie, ale endpoint worker health nadal
+nie zastępuje zewnętrznego monitoringu.
+
+## Runtime Configuration as a Project Pattern
+
+Ten projekt używa backend-driven UI feature flags.
+
+To znaczy:
+
+- frontend nie trzyma źródła prawdy o feature flags
+- wartości przychodzą z backendu
+- frontend tylko renderuje UI zgodnie z dostępną konfiguracją
+
+To podejście jest używane do kontrolowania:
+
+- global search
+- dashboard overview
+- admin navigation
+- user management navigation
+- email-related sections
+- email delivery visibility
+- email 2FA availability
+
+Feature flag nigdy nie zastępuje autoryzacji po stronie API.
+
+## Naming and Organization Rules
+
+W projekcie warto utrzymywać kilka prostych zasad:
+
+- nazwy folderów powinny wynikać z odpowiedzialności, nie z technicznego przypadku użycia
+- DTO na backendzie i typy na frontendzie powinny mieć spójne nazwy i podobny kształt
+- feature-specific logika powinna być centralizowana, a nie rozrzucana po wielu komponentach
+- routing i shell powinny sterować dostępnością sekcji aplikacji
+- backend ma pozostać źródłem prawdy dla auth, ról i konfiguracji runtime
+
+## Testing Layers
+
+Projekt ma kilka poziomów testów:
+
+- `backend/UnitTests/` - testy jednostkowe backendu
+- `backend/IntegrationTests/` - testy integracyjne API i warstwy persistence
+- `backend/E2ETests/` - smoke tests uruchamiane przeciw działającej aplikacji
+- `frontend/src/tests/` i testy przy komponentach - testy React + RTL/Vitest
+
+Testy usług `ProjectTask` używają mockowanych portów Application i sprawdzają
+reguły orkiestracji, statusy oraz kolejność decyzji dostępu. Testy integracyjne
+sprawdzają rzeczywistą konfigurację API i persistence. Test PostgreSQL wymaga
+działającego Docker Desktop, ponieważ uruchamia kontener `postgres:16-alpine`
+przez Testcontainers.
+
+## Recommended Reading Order
+
+Jeśli zaczynasz pracę nad ProcureFlow, czytaj w tej kolejności:
+
+1. `README.md`
+2. `doc/README.md`
+3. `doc/ROADMAP/PROCUREFLOW/00_PRODUCT_ROADMAP_OVERVIEW.md`
+4. `doc/ARCHITECTURE.md`
+5. `doc/BACKEND_SETUP.md`
+6. `doc/FRONTEND_SETUP.md`
+7. dokument aktywnego etapu PF
+8. `doc/ADDING_FEATURES.md`
+
+## See Also
+
+- `doc/GETTING_STARTED.md` - uruchomienie projektu i podstawowe komendy
+- `doc/BACKEND_SETUP.md` - szczegóły warstw backendu
+- `doc/FRONTEND_SETUP.md` - szczegóły struktury frontendu
+- `doc/JWT_ARCHITECTURE.md` - sesja, JWT i refresh token rotation
+- `doc/EMAIL_2FA_FLOWS.md` - email confirmation, 2FA i reset hasła
+- `doc/ADDING_FEATURES.md` - workflow dodawania nowych funkcji
